@@ -47,9 +47,7 @@ function requireLogin() {
 
 // ── API 呼叫（多個 proxy 自動備援）──
 const PROXIES = [
-  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`
 ];
 
 async function callAPI(endpoint, params) {
