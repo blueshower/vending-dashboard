@@ -1,162 +1,303 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>交易明細 — 販賣機管理</title>
-  <link rel="stylesheet" href="../css/style.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>交易明細 — 販賣機管理平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../css/layout.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .tx-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .tx-left, .tx-right { display: flex; flex-direction: column; gap: 16px; }
+  .search-bar { display:flex; gap:10px; }
+  .search-bar input {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:7px; color:var(--text); font-size:13px;
+    padding:8px 14px; outline:none; font-family:var(--font); flex:1;
+  }
+  .search-bar input:focus { border-color:var(--accent); }
+  .mode-tag {
+    display:inline-block; padding:4px 12px; border-radius:20px;
+    font-size:12px; font-weight:700;
+  }
+  .mode-month { background:rgba(0,163,255,.15); color:var(--accent2); }
+  .mode-today { background:rgba(0,200,150,.15); color:var(--accent); }
+  @media(max-width:900px){ .tx-layout{grid-template-columns:1fr} }
+</style>
 </head>
 <body>
-<script src="../js/config.js"></script>
-<script src="../js/sidebar.js"></script>
-<script>
-let charts = {};
-let allSales = [];
 
-window.addEventListener("DOMContentLoaded", async () => {
-  const range = new URLSearchParams(location.search).get("range") || "month";
-  const title = range === "today" ? "今日交易明細" : "本月交易明細";
-  renderLayout(title, "transaction");
-  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">載入中…</p>`;
-  await loadTransaction(range);
-});
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">載入交易資料...</div>
+</div>
 
-async function loadTransaction(range) {
-  showLoading(true);
-  try {
-    const { company, devices: allowed } = getSession();
-    const today = getToday();
-    const begin = range === "today" ? today : getMonthStart();
-
-    const salesRes = await callAPI("/Sales.aspx", { begin, company, end: today });
-    let sales = (salesRes.sales || []).filter(s => s.state === 1);
-
-    if (allowed && allowed.length > 0) {
-      sales = sales.filter(s => allowed.includes(s.code));
-    }
-
-    allSales = sales;
-    renderTransaction(sales, range);
-  } catch(e) {
-    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px">載入失敗：${e.message}</p>`;
-  } finally { showLoading(false); }
-}
-
-function renderTransaction(sales, range) {
-  const totalAmt = sales.reduce((a, s) => a + (s.price || 0), 0);
-
-  // ── 表格 rows ──
-  const rows = sales.map((s, i) => `
-    <tr>
-      <td>${i+1}</td>
-      <td>${s.time?.slice(0,16)||"—"}</td>
-      <td><code style="font-size:11px">${s.code}</code></td>
-      <td>${s.name||"—"}</td>
-      <td>${s.commodityName||"—"}</td>
-      <td>${s.layer||"—"}</td>
-      <td>NT$ ${(s.price||0).toLocaleString()}</td>
-      <td>${(s.detail||[]).map(d=>`${d.type} $${d.money}`).join("<br/>")}</td>
-    </tr>`).join("");
-
-  document.getElementById("page-body").innerHTML = `
-    <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center">
-      <button class="btn-icon ${range==='month'?'':'btn-secondary'}" onclick="switchRange('month')">📅 本月</button>
-      <button class="btn-icon ${range==='today'?'':'btn-secondary'}" onclick="switchRange('today')">📌 今日</button>
-      <span style="color:#64748b;font-size:13px">共 ${sales.length} 筆 ／ 合計 NT$ ${totalAmt.toLocaleString()}</span>
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">🏪</div>
+    <div><div class="logo-title">販賣機管理平台</div><div class="logo-sub">VMS Dashboard</div></div>
+  </div>
+  <nav class="nav">
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">📊</span>Dashboard</a>
+    <a class="nav-item" href="devices.html"><span class="nav-icon">🖥️</span>設備狀態</a>
+    <a class="nav-item" href="inventory.html"><span class="nav-icon">📦</span>庫存預訂</a>
+    <a class="nav-item" id="nav-month" href="transactions.html?mode=month"><span class="nav-icon">💳</span>本月交易</a>
+    <a class="nav-item" id="nav-today" href="transactions.html?mode=today"><span class="nav-icon">🧾</span>今日交易</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-card">
+      <div class="user-avatar">👤</div>
+      <div>
+        <div class="user-name" id="sb-user">—</div>
+        <div class="user-role" id="sb-company">—</div>
+      </div>
+      <button class="logout-btn" onclick="logout()">🚪</button>
     </div>
-    <div class="detail-layout">
-      <!-- 左側：表格 -->
-      <div class="table-wrap">
-        <div class="table-header"><h2>交易列表</h2></div>
-        <div style="overflow-y:auto;max-height:520px">
-          <table>
-            <thead><tr><th>#</th><th>時間</th><th>設備編號</th><th>設備名稱</th><th>商品</th><th>位置</th><th>金額</th><th>付款</th></tr></thead>
-            <tbody>${rows||"<tr><td colspan='8' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
-          </table>
+  </div>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title" id="topbar-title">💳 交易明細</div>
+    <a class="topbar-btn" href="dashboard.html">← 返回 Dashboard</a>
+    <button class="topbar-btn" onclick="loadData()">🔄 重新整理</button>
+  </header>
+
+  <div class="page-body">
+    <div class="tx-layout">
+
+      <!-- 左：列表 -->
+      <div class="tx-left">
+        <div class="chart-box">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+            <h3 style="margin:0">交易列表</h3>
+            <span id="mode-tag" class="mode-tag"></span>
+            <span id="tx-count" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
+          </div>
+          <div class="search-bar" style="margin-bottom:12px">
+            <input id="search" placeholder="搜尋商品/設備/付款方式..." oninput="renderTable()"/>
+          </div>
+          <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>時間</th>
+                  <th>設備</th>
+                  <th>商品</th>
+                  <th>金額</th>
+                  <th>付款方式</th>
+                </tr>
+              </thead>
+              <tbody id="tx-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
-      <!-- 右側：圖表 -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="chart-card"><h3>銷售週次分布</h3><canvas id="chart-week" height="160"></canvas></div>
-        <div class="chart-card"><h3>銷售週別分布</h3><canvas id="chart-dow" height="160"></canvas></div>
-        <div class="chart-card"><h3>銷售時段分布（曲線）</h3><canvas id="chart-hour" height="160"></canvas></div>
-        <div class="chart-card"><h3>商品金額落點分布</h3><canvas id="chart-price" height="160"></canvas></div>
+
+      <!-- 右：圖表 -->
+      <div class="tx-right">
+        <div class="chart-box">
+          <h3>📅 銷售週次分布</h3>
+          <canvas id="chart-week" height="150"></canvas>
+        </div>
+        <div class="chart-box">
+          <h3>📆 銷售週別分布</h3>
+          <canvas id="chart-weekday" height="150"></canvas>
+        </div>
+        <div class="chart-box">
+          <h3>🕐 銷售時段分布</h3>
+          <canvas id="chart-hour" height="150"></canvas>
+        </div>
+        <div class="chart-box">
+          <h3>💰 商品金額落點分布</h3>
+          <canvas id="chart-price" height="150"></canvas>
+        </div>
       </div>
-    </div>`;
 
-  drawWeekly(sales);
-  drawDOW(sales);
-  drawHourly(sales);
-  drawPriceDist(sales);
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+const S = requireAuth();
+document.getElementById("sb-user").textContent    = S.username;
+document.getElementById("sb-company").textContent = `公司：${S.company}`;
+const ALLOWED     = new Set(S.devices.map(d => d.code));
+const DEVICE_NAME = Object.fromEntries(S.devices.map(d => [d.code, d.name]));
+
+const urlParams = new URLSearchParams(location.search);
+const MODE = urlParams.get("mode") === "today" ? "today" : "month"; // "today" | "month"
+
+// 高亮側邊欄
+document.getElementById("nav-" + MODE).classList.add("active");
+
+const titleEl   = document.getElementById("topbar-title");
+const modeTagEl = document.getElementById("mode-tag");
+if (MODE === "today") {
+  titleEl.textContent      = "🧾 今日交易明細";
+  modeTagEl.textContent    = "今日";
+  modeTagEl.className      = "mode-tag mode-today";
+} else {
+  titleEl.textContent      = "💳 本月交易明細";
+  modeTagEl.textContent    = "本月";
+  modeTagEl.className      = "mode-tag mode-month";
 }
 
-function switchRange(range) {
-  const url = new URL(location.href);
-  url.searchParams.set("range", range);
-  location.href = url.toString();
+let allSales = [];
+function logout() { clearSession(); window.location.href = "../index.html"; }
+
+const chartInstances = {};
+function makeChart(id, config) {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  chartInstances[id] = new Chart(document.getElementById(id), config);
 }
 
-// 銷售週次分布（第幾週）
-function drawWeekly(sales) {
+async function loadData() {
+  document.getElementById("loading").classList.remove("hide");
+  try {
+    const today = todayStr();
+    const begin = MODE === "today" ? today : firstDayOfMonthStr();
+    const end   = today;
+
+    const sign = await buildSign({ begin, company: S.company, end }, S.token);
+    const res  = await callAPI(
+      `${CONFIG.API_BASE}/Sales.aspx?begin=${begin}&company=${S.company}&end=${end}&sign=${sign}`
+    );
+    allSales = (res.sales || []).filter(s => ALLOWED.has(s.code));
+    renderTable();
+    renderCharts();
+  } catch (err) {
+    alert("載入失敗：" + err.message);
+  } finally {
+    document.getElementById("loading").classList.add("hide");
+  }
+}
+
+function renderTable() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const filtered = allSales.filter(s => {
+    const payTypes = (s.detail || []).map(d => d.type).join(" ");
+    return (
+      s.commodityName.toLowerCase().includes(q) ||
+      (DEVICE_NAME[s.code] || s.code).toLowerCase().includes(q) ||
+      payTypes.toLowerCase().includes(q)
+    );
+  });
+
+  document.getElementById("tx-count").textContent = `共 ${filtered.length} 筆`;
+  const tbody = document.getElementById("tx-tbody");
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">無符合資料</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(s => {
+    const payList = (s.detail || []).map(d => `${d.type}($${d.money})`).join(" + ");
+    return `<tr>
+      <td style="font-size:11px;color:var(--muted)">${s.time.slice(0, 16)}</td>
+      <td style="font-size:12px">${DEVICE_NAME[s.code] || s.code}</td>
+      <td>${s.commodityName}</td>
+      <td style="font-weight:700;color:var(--accent)">$${s.price}</td>
+      <td style="font-size:11px;color:var(--muted)">${payList}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderCharts() {
+  renderWeek();
+  renderWeekday();
+  renderHour();
+  renderPriceDist();
+}
+
+// 銷售週次分布
+function renderWeek() {
   const map = {};
-  sales.forEach(s => {
-    if (!s.time) return;
-    const d = new Date(s.time.replace(" ","T"));
-    const week = Math.ceil(d.getDate() / 7);
-    const key = `第${week}週`;
-    map[key] = (map[key]||0)+1;
+  allSales.forEach(s => {
+    const d   = new Date(s.time);
+    const yr  = d.getFullYear();
+    // ISO week
+    const jan1 = new Date(yr, 0, 1);
+    const wk   = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+    const key  = `第${wk}週`;
+    map[key] = (map[key] || 0) + 1;
   });
-  const labels=Object.keys(map).sort();
-  charts.week?.destroy();
-  charts.week = new Chart(document.getElementById("chart-week"), {
-    type:"bar",
-    data:{ labels, datasets:[{ label:"筆數", data:labels.map(k=>map[k]), backgroundColor:"#2563eb" }] },
-    options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
-  });
-}
-
-// 銷售週別分布（週一~週日）
-function drawDOW(sales) {
-  const days=["週一","週二","週三","週四","週五","週六","週日"];
-  const cnt=Array(7).fill(0);
-  sales.forEach(s => {
-    if (!s.time) return;
-    cnt[(new Date(s.time.replace(" ","T")).getDay()+6)%7]++;
-  });
-  charts.dow?.destroy();
-  charts.dow = new Chart(document.getElementById("chart-dow"), {
-    type:"bar",
-    data:{ labels:days, datasets:[{ label:"筆數", data:cnt, backgroundColor:"#16a34a" }] },
-    options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
+  const labels = Object.keys(map).sort();
+  makeChart("chart-week", {
+    type: "bar",
+    data: { labels, datasets: [{ data: labels.map(k => map[k]), backgroundColor: "#00c896", borderRadius: 4, borderWidth: 0 }] },
+    options: { plugins: { legend: { display: false } }, scales: {
+      x: { ticks: { color: "#8b949e", font: { size: 10 } }, grid: { color: "rgba(255,255,255,.05)" } },
+      y: { ticks: { color: "#8b949e" }, grid: { color: "rgba(255,255,255,.05)" } }
+    }}
   });
 }
 
-// 銷售時段分布（0~23時）
-function drawHourly(sales) {
-  const cnt=Array(24).fill(0);
-  sales.forEach(s => {
-    if (!s.time) return;
-    cnt[new Date(s.time.replace(" ","T")).getHours()]++;
+// 銷售週別分布
+function renderWeekday() {
+  const DAYS = ["日","一","二","三","四","五","六"];
+  const map  = [0,0,0,0,0,0,0];
+  allSales.forEach(s => { const d = new Date(s.time); if (!isNaN(d)) map[d.getDay()]++; });
+  makeChart("chart-weekday", {
+    type: "bar",
+    data: {
+      labels: DAYS,
+      datasets: [{ data: map, backgroundColor: ["#f85149","#00c896","#00c896","#00c896","#00c896","#00c896","#f0883e"], borderRadius: 4, borderWidth: 0 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: {
+      x: { ticks: { color: "#e6edf3" }, grid: { display: false } },
+      y: { ticks: { color: "#8b949e" }, grid: { color: "rgba(255,255,255,.05)" } }
+    }}
   });
-  charts.hour?.destroy();
-  charts.hour = new Chart(document.getElementById("chart-hour"), {
-    type:"line",
-    data:{ labels:Array.from({length:24},(_,i)=>`${i}時`), datasets:[{ label:"筆數", data:cnt, borderColor:"#d97706", tension:0.4, fill:true, backgroundColor:"rgba(217,119,6,.1)" }] },
-    options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
+}
+
+// 銷售時段分布
+function renderHour() {
+  const map = new Array(24).fill(0);
+  allSales.forEach(s => { const d = new Date(s.time); if (!isNaN(d)) map[d.getHours()]++; });
+  makeChart("chart-hour", {
+    type: "line",
+    data: {
+      labels: Array.from({length:24}, (_,i) => `${i}時`),
+      datasets: [{ data: map, borderColor: "#00a3ff", backgroundColor: "rgba(0,163,255,.15)", tension: .4, fill: true, pointRadius: 3 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: {
+      x: { ticks: { color: "#8b949e", font: { size: 9 } }, grid: { color: "rgba(255,255,255,.05)" } },
+      y: { ticks: { color: "#8b949e" }, grid: { color: "rgba(255,255,255,.05)" } }
+    }}
   });
 }
 
 // 商品金額落點分布
-function drawPriceDist(sales) {
-  const ranges=[[0,100,"$0-100"],[101,200,"$101-200"],[201,300,"$201-300"],[301,500,"$301-500"],[501,1000,"$501-1000"],[1001,9999,"$1001+"]];
-  const cnt=ranges.map(([lo,hi])=>sales.filter(s=>(s.price||0)>=lo&&(s.price||0)<=hi).length);
-  charts.price?.destroy();
-  charts.price = new Chart(document.getElementById("chart-price"), {
-    type:"bar",
-    data:{ labels:ranges.map(r=>r[2]), datasets:[{ label:"筆數", data:cnt, backgroundColor:"#7c3aed" }] },
-    options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
+function renderPriceDist() {
+  const brackets = { "0-100": 0, "101-200": 0, "201-300": 0, "301-500": 0, "501+": 0 };
+  allSales.forEach(s => {
+    const p = s.price;
+    if      (p <= 100) brackets["0-100"]++;
+    else if (p <= 200) brackets["101-200"]++;
+    else if (p <= 300) brackets["201-300"]++;
+    else if (p <= 500) brackets["301-500"]++;
+    else               brackets["501+"]++;
+  });
+  makeChart("chart-price", {
+    type: "bar",
+    data: {
+      labels: Object.keys(brackets),
+      datasets: [{ data: Object.values(brackets), backgroundColor: "#a371f7", borderRadius: 4, borderWidth: 0 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: {
+      x: { ticks: { color: "#e6edf3" }, grid: { display: false } },
+      y: { ticks: { color: "#8b949e" }, grid: { color: "rgba(255,255,255,.05)" } }
+    }}
   });
 }
+
+loadData();
 </script>
 </body>
 </html>
