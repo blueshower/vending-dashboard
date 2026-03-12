@@ -6,8 +6,8 @@ const CONFIG = {
   // ★ Google Sheet ID（帳號管理用）
   SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
-  // API Base — 透過 CORS Proxy 轉發
-  API_BASE: "https://corsproxy.io/?https://api.tenlifeservice.com",
+  // API Base（不需修改）
+  API_BASE: "https://api.tenlifeservice.com",
 
   // 離線判斷：超過幾分鐘算離線
   OFFLINE_MINUTES: 5,
@@ -45,14 +45,24 @@ function requireLogin() {
   return s;
 }
 
+// ── 透過 allorigins proxy 呼叫 API（解決 CORS）──
 async function callAPI(endpoint, params) {
   const session = getSession();
   if (!session) throw new Error("未登入");
   const sign = await buildSign(params, session.token);
   const query = Object.keys(params).sort()
     .map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
-  const url = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`API 錯誤 ${res.status}`);
-  return await res.json();
+
+  // 原始 API 網址
+  const targetUrl = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
+
+  // 用 allorigins 轉發（穩定免費 proxy）
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error(`Proxy 錯誤 ${res.status}`);
+  const wrapper = await res.json();
+
+  // allorigins 把內容包在 contents 欄位裡
+  return JSON.parse(wrapper.contents);
 }
