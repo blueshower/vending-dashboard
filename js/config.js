@@ -3,13 +3,11 @@
 // ============================================================
 
 const CONFIG = {
-  // ★★★ 請填入你的 Google Sheet ID ★★★
-  // 開啟試算表，網址：
-  // https://docs.google.com/spreadsheets/d/[Sheet ID]/edit
+  // ★ Google Sheet ID（帳號管理用）
   SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
-  // API Base（不需修改）
-  API_BASE: "https://api.tenlifeservice.com",
+  // API Base — 透過 CORS Proxy 轉發
+  API_BASE: "https://corsproxy.io/?https://api.tenlifeservice.com",
 
   // 離線判斷：超過幾分鐘算離線
   OFFLINE_MINUTES: 5,
@@ -51,7 +49,8 @@ async function callAPI(endpoint, params) {
   const session = getSession();
   if (!session) throw new Error("未登入");
   const sign = await buildSign(params, session.token);
-  const query = Object.keys(params).sort().map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
+  const query = Object.keys(params).sort()
+    .map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
   const url = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`API 錯誤 ${res.status}`);
