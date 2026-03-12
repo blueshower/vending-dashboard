@@ -41,6 +41,36 @@
 <script src="js/config.js"></script>
 <script>
 // ============================================================
+// JSONP 呼叫 GAS（解決 CORS 問題）
+// ============================================================
+function callGAS(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = "gas_cb_" + Date.now();
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      document.getElementById("_gas_script_")?.remove();
+      reject(new Error("請求逾時，請確認 GAS 網址是否正確"));
+    }, 15000);
+
+    window[cbName] = (data) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      document.getElementById("_gas_script_")?.remove();
+      resolve(data);
+    };
+
+    const s = document.createElement("script");
+    s.id = "_gas_script_";
+    s.src = url + "&callback=" + cbName;
+    s.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error("無法連線到 GAS，請確認部署設定"));
+    };
+    document.body.appendChild(s);
+  });
+}
+
+// ============================================================
 // 登入頁 JS
 // ============================================================
 
@@ -64,10 +94,9 @@ async function doLogin() {
   showLoading(true);
 
   try {
-    // ── 向 Google Apps Script 查詢帳號資料 ──
+    // ── 向 Google Apps Script 查詢帳號資料（JSONP 避免 CORS）──
     const url = `${CONFIG.GAS_URL}?action=login&company=${encodeURIComponent(company)}&user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`;
-    const res  = await fetch(url);
-    const data = await res.json();
+    const data = await callGAS(url);
 
     if (!data.success) {
       errEl.textContent = data.message || "帳號或密碼錯誤";
@@ -86,7 +115,7 @@ async function doLogin() {
     window.location.href = "pages/dashboard.html";
 
   } catch (e) {
-    errEl.textContent = "連線失敗，請確認網路或 GAS 設定";
+    errEl.textContent = "連線失敗：" + e.message;
     console.error(e);
   } finally {
     btn.disabled = false;
