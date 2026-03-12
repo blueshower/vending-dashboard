@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登入 — 自動販賣機管理系統</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <h1>🏪 販賣機管理系統</h1>
+    <p class="sub">請輸入登入資訊</p>
+
+    <div class="form-group">
+      <label for="inp-company">公司編號</label>
+      <input id="inp-company" type="text" placeholder="例：2000116" />
+    </div>
+
+    <div class="form-group">
+      <label for="inp-user">帳號</label>
+      <input id="inp-user" type="text" placeholder="請輸入帳號" />
+    </div>
+
+    <div class="form-group">
+      <label for="inp-pass">密碼</label>
+      <input id="inp-pass" type="password" placeholder="請輸入密碼" />
+    </div>
+
+    <button class="btn-primary" id="btn-login" onclick="doLogin()">登　入</button>
+    <p class="login-error" id="login-error"></p>
+  </div>
+</div>
+
+<!-- Loading 遮罩 -->
+<div id="loading-overlay" class="hidden">
+  <div class="spinner"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+// ============================================================
+// 登入頁 JS
+// ============================================================
+
+async function doLogin() {
+  const company = document.getElementById("inp-company").value.trim();
+  const user    = document.getElementById("inp-user").value.trim();
+  const pass    = document.getElementById("inp-pass").value.trim();
+  const errEl   = document.getElementById("login-error");
+  const btn     = document.getElementById("btn-login");
+
+  errEl.textContent = "";
+
+  // ── 基本驗證 ──
+  if (!company || !user || !pass) {
+    errEl.textContent = "請填寫所有欄位";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "驗證中…";
+  showLoading(true);
+
+  try {
+    // ── 向 Google Apps Script 查詢帳號資料 ──
+    const url = `${CONFIG.GAS_URL}?action=login&company=${encodeURIComponent(company)}&user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+
+    if (!data.success) {
+      errEl.textContent = data.message || "帳號或密碼錯誤";
+      return;
+    }
+
+    // ── 儲存 Session ──
+    saveSession({
+      company,
+      user,
+      token:    data.token,
+      devices:  data.devices,   // 允許查看的設備陣列 ["code1","code2",...]
+      username: data.username,
+    });
+
+    window.location.href = "pages/dashboard.html";
+
+  } catch (e) {
+    errEl.textContent = "連線失敗，請確認網路或 GAS 設定";
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "登　入";
+    showLoading(false);
+  }
+}
+
+function showLoading(b) {
+  document.getElementById("loading-overlay").classList.toggle("hidden", !b);
+}
+
+// Enter 鍵觸發登入
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") doLogin();
+});
+
+// 已登入則直接跳 dashboard
+if (getSession()) window.location.href = "pages/dashboard.html";
+</script>
+</body>
+</html>
