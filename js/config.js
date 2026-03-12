@@ -6,7 +6,7 @@ const CONFIG = {
   // ★★★ 請填入你的 Google Sheet ID ★★★
   // 開啟試算表，網址：
   // https://docs.google.com/spreadsheets/d/[Sheet ID]/edit
-  SHEET_ID: "1jnuWjEzM93G5-D-p8kTZfUR-IexPIZknQEnEbf_QP-I",
+  SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
   // API Base（不需修改）
   API_BASE: "https://api.tenlifeservice.com",
