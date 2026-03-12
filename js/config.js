@@ -45,24 +45,34 @@ function requireLogin() {
   return s;
 }
 
-// ── 透過 allorigins proxy 呼叫 API（解決 CORS）──
+// ── API 呼叫（多個 proxy 自動備援）──
+const PROXIES = [
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
 async function callAPI(endpoint, params) {
   const session = getSession();
   if (!session) throw new Error("未登入");
   const sign = await buildSign(params, session.token);
   const query = Object.keys(params).sort()
     .map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
-
-  // 原始 API 網址
   const targetUrl = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
 
-  // 用 allorigins 轉發（穩定免費 proxy）
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-
-  const res = await fetch(proxyUrl);
-  if (!res.ok) throw new Error(`Proxy 錯誤 ${res.status}`);
-  const wrapper = await res.json();
-
-  // allorigins 把內容包在 contents 欄位裡
-  return JSON.parse(wrapper.contents);
+  // 依序嘗試每個 proxy
+  let lastErr;
+  for (const makeProxy of PROXIES) {
+    try {
+      const proxyUrl = makeProxy(targetUrl);
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) { lastErr = new Error(`HTTP ${res.status}`); continue; }
+      const text = await res.text();
+      return JSON.parse(text);
+    } catch(e) {
+      lastErr = e;
+      continue;
+    }
+  }
+  throw new Error("所有 Proxy 均失敗：" + lastErr?.message);
 }
