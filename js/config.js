@@ -4,7 +4,7 @@
 
 const CONFIG = {
   // ★ 請填入你的 Google Apps Script Web App URL
-  GAS_URL: "https://script.google.com/macros/s/AKfycbwAMw8qcUCcoyHGZil6zhmCi-iwNyuzjSI0huvgHFoMoCmWXgcChjbOnrhOu4rsfdYOzw/exec",
+  GAS_URL: "https://script.google.com/macros/s/AKfycby1aRPw7Wjr56BFwUnWXJSQCEIW9BWIHKkHETQwOxNm2WQpxLJ-K4AezMracfrpqGYhzg/exec",
 
   // API Base
   API_BASE: "https://api.tenlifeservice.com",
