@@ -3,19 +3,18 @@
 // ============================================================
 
 const CONFIG = {
-  // ★ 請填入你的 Google Apps Script Web App URL
-  GAS_URL: "https://script.google.com/macros/s/AKfycbw9C2v6SrN3za7DAHnowQVpPrNMSnqb-R23crJ3ivLapxAQpDLJcFalvyXkKH4e2zEi/exec",
+  // ★★★ 請填入你的 Google Sheet ID ★★★
+  // 開啟試算表，網址：
+  // https://docs.google.com/spreadsheets/d/1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM/edit
+  SHEET_ID: "YOUR_SHEET_ID",
 
-  // API Base
+  // API Base（不需修改）
   API_BASE: "https://api.tenlifeservice.com",
 
   // 離線判斷：超過幾分鐘算離線
   OFFLINE_MINUTES: 5,
 };
 
-// ============================================================
-// SHA-256 工具函式（純前端，不需安裝任何套件）
-// ============================================================
 async function sha256(message) {
   const msgBuffer = new TextEncoder().encode(message);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
@@ -23,78 +22,38 @@ async function sha256(message) {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// ============================================================
-// 建立 sign 參數
-// params: 物件 { begin, company, end, ... }（會自動 ASCII 排序）
-// token:  字串
-// ============================================================
 async function buildSign(params, token) {
-  const sorted = Object.keys(params)
-    .sort()
-    .map((k) => `${k}=${params[k]}`)
-    .join("&");
-  const raw = sorted + token;
-  return await sha256(raw);
+  const sorted = Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join("&");
+  return await sha256(sorted + token);
 }
 
-// ============================================================
-// 取得當月第一天 / 今天（YYYY-MM-DD）
-// ============================================================
 function getMonthStart() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
 }
 
 function getToday() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-// ============================================================
-// Session 存取（登入資訊暫存在 sessionStorage）
-// ============================================================
-function saveSession(data) {
-  sessionStorage.setItem("session", JSON.stringify(data));
-}
+function saveSession(data) { sessionStorage.setItem("session", JSON.stringify(data)); }
+function getSession() { const s=sessionStorage.getItem("session"); return s?JSON.parse(s):null; }
+function clearSession() { sessionStorage.removeItem("session"); }
 
-function getSession() {
-  const s = sessionStorage.getItem("session");
-  return s ? JSON.parse(s) : null;
-}
-
-function clearSession() {
-  sessionStorage.removeItem("session");
-}
-
-// ============================================================
-// 守衛：未登入就跳回 login
-// ============================================================
 function requireLogin() {
   const s = getSession();
-  if (!s) {
-    window.location.href = "../index.html";
-  }
+  if (!s) window.location.href = "../index.html";
   return s;
 }
 
-// ============================================================
-// 通用 API 呼叫（加上 sign）
-// endpoint: "/MachineState.aspx"
-// params:   物件（不含 sign）
-// ============================================================
 async function callAPI(endpoint, params) {
   const session = getSession();
   if (!session) throw new Error("未登入");
-
-  const token = session.token;
-  const sign = await buildSign(params, token);
-  const query = Object.keys(params)
-    .sort()
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
-    .join("&");
+  const sign = await buildSign(params, session.token);
+  const query = Object.keys(params).sort().map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
   const url = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
-
-  const res = await fetch(url, { method: "GET" });
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`API 錯誤 ${res.status}`);
   return await res.json();
 }
