@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>設備狀態 — 販賣機管理</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", async () => {
+  renderLayout("設備狀態資訊", "device");
+  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">載入中…</p>`;
+  await loadDevices();
+});
+
+async function loadDevices() {
+  showLoading(true);
+  try {
+    const { company, devices: allowed } = getSession();
+    const res = await callAPI("/MachineState.aspx", { company });
+    const now = new Date();
+
+    let machines = res.machine || [];
+    // 依權限過濾
+    if (allowed && allowed.length > 0) {
+      machines = machines.filter(m => allowed.includes(m.code));
+    }
+
+    const rows = machines.map((m, idx) => {
+      const diff = (now - new Date(m.uploadTime)) / 60000;
+      const online = diff <= 5;
+      const badge = online
+        ? `<span class="badge badge-green">連線</span>`
+        : `<span class="badge badge-red">離線</span>`;
+      const syncAgo = Math.floor(diff) + " 分鐘前";
+      return `
+        <tr>
+          <td>${idx + 1}</td>
+          <td><code style="font-size:12px">${m.code}</code></td>
+          <td>${badge}</td>
+          <td>${m.uploadTime || "—"}</td>
+          <td>${online ? "—" : syncAgo}</td>
+          <td>${m.temperature1 != null ? m.temperature1 + "°C" : "—"}</td>
+        </tr>`;
+    }).join("");
+
+    document.getElementById("page-body").innerHTML = `
+      <div class="table-wrap">
+        <div class="table-header">
+          <h2>設備狀態列表（共 ${machines.length} 台）</h2>
+          <button class="btn-icon" onclick="loadDevices()">🔄 重新整理</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>設備編號</th>
+              <th>連線狀態</th>
+              <th>最後同步時間</th>
+              <th>離線時長</th>
+              <th>溫度1</th>
+            </tr>
+          </thead>
+          <tbody>${rows || "<tr><td colspan='6' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px">載入失敗：${e.message}</p>`;
+  } finally { showLoading(false); }
+}
+</script>
+</body>
+</html>
