@@ -27,7 +27,7 @@ function renderLayout(pageTitle, activePage) {
   <div class="app-layout">
     <!-- 側欄 -->
     <aside class="sidebar">
-      <div class="sidebar-logo">🏪 <span>販賣機</span>管理</div>
+      <div class="sidebar-logo">🏪 <span>販賣機</span>數據平台</div>
       <nav>${navHTML}</nav>
       <div class="sidebar-footer">
         公司：${session.company}<br/>
