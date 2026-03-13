@@ -6,11 +6,10 @@ const CONFIG = {
   // ★ Google Sheet ID（帳號管理用）
   SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
-  // ★★★ 填入你的 Cloudflare Worker 網址 ★★★
-  // 格式：https://你的名稱.workers.dev
-  PROXY_BASE: "https://vending-proxy.blueshower-tw.workers.dev/",
+  // ★ Cloudflare Worker Proxy
+  PROXY_BASE: "https://vending-proxy.blueshower-tw.workers.dev",
 
-  // API Base（不需修改）
+  // API Base 預設值（Sheet 的 path 欄優先）
   API_BASE: "https://api.tenlifeservice.com",
 
   // 離線判斷：超過幾分鐘算離線
@@ -52,14 +51,19 @@ function requireLogin() {
 async function callAPI(endpoint, params) {
   const session = getSession();
   if (!session) throw new Error("未登入");
+
+  // 優先使用 session 內的 apiBase（來自 Sheet path 欄），否則用預設值
+  const apiBase = session.apiBase || CONFIG.API_BASE;
+
   const sign = await buildSign(params, session.token);
   const query = Object.keys(params).sort()
     .map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
 
-  const targetUrl = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
+  // 透過 Cloudflare Worker Proxy 轉發
+  const targetUrl = `${apiBase}${endpoint}?${query}&sign=${sign}`;
   const proxyUrl  = `${CONFIG.PROXY_BASE}?url=${encodeURIComponent(targetUrl)}`;
 
   const res = await fetch(proxyUrl);
-  if (!res.ok) throw new Error(`Proxy 錯誤 ${res.status}`);
+  if (!res.ok) throw new Error(`API 錯誤 ${res.status}`);
   return await res.json();
 }
