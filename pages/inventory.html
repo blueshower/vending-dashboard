@@ -21,11 +21,23 @@ async function loadInventory() {
     const { company, devices: allowed } = getSession();
     const begin = getMonthStart(), end = getToday();
 
-    const stateRes = await callAPI("/MachineState.aspx", { company });
+    // 同時呼叫設備狀態 + 設備名稱
+    const [stateRes, nameRes] = await Promise.all([
+      callAPI("/MachineState.aspx", { company }),
+      callAPI("/Machine.aspx", { company }),
+    ]);
+
+    // code → name 對照表
+    const nameMap = {};
+    (nameRes.machine || []).forEach(m => { nameMap[m.code] = m.name; });
+
     let machines = stateRes.machine || [];
-    if (allowed && allowed.length > 0) machines = machines.filter(m => allowed.includes(m.code));
+    if (allowed && allowed.length > 0) {
+      machines = machines.filter(m => allowed.includes(m.code));
+    }
     const codeList = machines.map(m => m.code);
 
+    // 逐台取即時庫存 + 可售庫存
     const invData = {};
     await Promise.all(codeList.map(async code => {
       const [rtRes, slRes] = await Promise.allSettled([
@@ -38,6 +50,7 @@ async function loadInventory() {
       };
     }));
 
+    // 預訂資料
     const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future:1 });
     const orders = orderRes.order || [];
 
@@ -45,6 +58,8 @@ async function loadInventory() {
     let idx = 1;
     codeList.forEach(code => {
       const { realtime, sellable } = invData[code];
+      const devName = nameMap[code] || "—";
+
       const rtMap = {};
       realtime.forEach(item => {
         if (!rtMap[item.commodityCode]) rtMap[item.commodityCode]={ name:item.name, count:0 };
@@ -56,16 +71,21 @@ async function loadInventory() {
       orders.filter(o=>o.code===code && o.finish==="").forEach(o => {
         ordMap[o.commodityCode]=(ordMap[o.commodityCode]||0)+1;
       });
+
       const allCodes = new Set([...Object.keys(rtMap),...Object.keys(slMap)]);
       allCodes.forEach(cc => {
         const name = rtMap[cc]?.name || sellable.find(s=>s.commodityCode===cc)?.commodityName || cc;
-        const rt = rtMap[cc]?.count ?? "—";
-        const sl = slMap[cc] ?? 0;
-        const ord = ordMap[cc] || 0;
-        const badge = sl>=1 ? `<span class="badge badge-green">有貨</span>` : `<span class="badge badge-red">缺貨</span>`;
+        const rt   = rtMap[cc]?.count ?? "—";
+        const sl   = slMap[cc] ?? 0;
+        const ord  = ordMap[cc] || 0;
+        const badge = sl>=1
+          ? `<span class="badge badge-green">有貨</span>`
+          : `<span class="badge badge-red">缺貨</span>`;
+
         rows.push(`<tr>
           <td>${idx++}</td>
           <td><code style="font-size:11px">${code}</code></td>
+          <td><strong>${devName}</strong></td>
           <td>${cc}</td>
           <td>${name}</td>
           <td>${rt}</td>
@@ -83,8 +103,13 @@ async function loadInventory() {
           <button class="btn-icon" onclick="loadInventory()">🔄 重新整理</button>
         </div>
         <table>
-          <thead><tr><th>#</th><th>設備編號</th><th>商品編號</th><th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th></tr></thead>
-          <tbody>${rows.join("")||"<tr><td colspan='8' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+          <thead>
+            <tr>
+              <th>#</th><th>設備編號</th><th>設備名稱</th><th>商品編號</th>
+              <th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th>
+            </tr>
+          </thead>
+          <tbody>${rows.join("")||"<tr><td colspan='9' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
         </table>
       </div>`;
   } catch(e) {
