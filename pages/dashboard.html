@@ -8,14 +8,16 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     /* ══ Dashboard 固定分割佈局 ══════════════════════════════ */
-    html, body { height: 100%; overflow: hidden; }
 
-    .main-content { height: 100vh; overflow: hidden; }
+    /* 覆寫全域 CSS 防止撐高 */
+    html, body          { height: 100% !important; overflow: hidden !important; }
+    .app-layout         { height: 100vh !important; overflow: hidden !important; }
+    .main-content       { height: 100vh !important; min-height: unset !important; overflow: hidden !important; }
 
     /* topbar 固定 56px，page-body 佔剩餘全部 */
     .page-body {
-      padding: 0;
-      height: calc(100vh - 56px);
+      padding: 0 !important;
+      height: calc(100vh - 56px) !important;
       display: flex;
       flex-direction: column;
       overflow: hidden;
