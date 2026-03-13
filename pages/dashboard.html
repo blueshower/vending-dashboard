@@ -6,11 +6,34 @@
   <title>Dashboard — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    .page-body          { padding: 10px 14px; }
+    .stats-grid         { gap: 10px; margin-bottom: 10px; }
+    .stat-card          { padding: 11px 13px; border-radius: 10px; }
+    .stat-card .label   { font-size: 11px; }
+    .stat-card .value   { font-size: 22px; margin: 2px 0 1px; }
+    .stat-card .sub-label { font-size: 11px; }
+    .stat-card .icon    { font-size: 20px; top: 10px; right: 12px; }
+    .charts-grid        { grid-template-columns: 1fr 2fr 1.2fr; gap: 10px; margin-bottom: 0; }
+    .chart-col          { gap: 10px; }
+    .chart-card         { padding: 9px 11px; border-radius: 8px; }
+    .chart-card h3      { font-size: 10px; margin-bottom: 6px; letter-spacing: .3px; }
+    .heatmap-wrap       { overflow-x: auto; }
+    .heatmap-table      { border-collapse: collapse; font-size: 8px; width: 100%; }
+    .heatmap-table th   { padding: 1px 2px; font-size: 8px; color: var(--muted); font-weight: 500; }
+    .heatmap-table td   { width: 16px; height: 13px; border-radius: 2px; text-align: center; font-size: 7px; }
+  </style>
 </head>
 <body>
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+/* Chart.js 全域字型縮小 */
+Chart.defaults.font.size   = 10;
+Chart.defaults.font.family = "'Noto Sans TC','Microsoft JhengHei',sans-serif";
+Chart.defaults.plugins.legend.labels.boxWidth = 8;
+Chart.defaults.plugins.legend.labels.padding  = 6;
+
 let G = { devices:[], stateMap:{}, inventoryMap:{}, orders:[], sales:[] };
 let charts = {};
 
@@ -119,15 +142,15 @@ function renderDashboard() {
 
   document.getElementById("charts-grid").innerHTML = `
     <div class="chart-col">
-      <div class="chart-card"><h3>連線狀態</h3><canvas id="chart-conn" height="160"></canvas></div>
-      <div class="chart-card"><h3>庫存狀態</h3><canvas id="chart-inv" height="160"></canvas></div>
+      <div class="chart-card"><h3>連線狀態</h3><canvas id="chart-conn" height="125"></canvas></div>
+      <div class="chart-card"><h3>庫存狀態</h3><canvas id="chart-inv" height="125"></canvas></div>
     </div>
     <div class="chart-col">
-      <div class="chart-card"><h3>各設備商品販售統計</h3><div style="overflow-x:auto"><canvas id="chart-device-sales" height="220"></canvas></div></div>
-      <div class="chart-card"><h3>商品銷售排名</h3><canvas id="chart-rank" height="200"></canvas></div>
+      <div class="chart-card"><h3>各設備商品販售統計</h3><div style="overflow-x:auto"><canvas id="chart-device-sales" height="155"></canvas></div></div>
+      <div class="chart-card"><h3>商品銷售排名</h3><canvas id="chart-rank" height="145"></canvas></div>
     </div>
     <div class="chart-col">
-      <div class="chart-card"><h3>每日交易趨勢</h3><canvas id="chart-trend" height="180"></canvas></div>
+      <div class="chart-card"><h3>每日交易趨勢</h3><canvas id="chart-trend" height="135"></canvas></div>
       <div class="chart-card"><h3>銷售熱力圖（週×時段）</h3><div class="heatmap-wrap" id="heatmap-wrap"></div></div>
     </div>`;
 
@@ -144,7 +167,7 @@ function drawConnectionPie(on, off) {
   charts.conn = new Chart(document.getElementById("chart-conn"), {
     type:"doughnut",
     data:{ labels:["連線","離線"], datasets:[{ data:[on,off], backgroundColor:["#16a34a","#dc2626"] }] },
-    options:{ plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom", labels:{ font:{size:9}, boxWidth:8, padding:5 } } }, cutout:"62%" }
   });
 }
 
@@ -153,7 +176,7 @@ function drawInventoryPie(f,n,l,s) {
   charts.inv = new Chart(document.getElementById("chart-inv"), {
     type:"doughnut",
     data:{ labels:["充足","正常","稍低","不足"], datasets:[{ data:[f,n,l,s], backgroundColor:["#16a34a","#2563eb","#d97706","#dc2626"] }] },
-    options:{ plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom", labels:{ font:{size:9}, boxWidth:8, padding:5 } } }, cutout:"62%" }
   });
 }
 
@@ -167,13 +190,15 @@ function drawDeviceSales(sales) {
   });
   const devices=Object.keys(map), products=[...productSet];
   const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
+  const dsCanvas = document.getElementById("chart-device-sales");
+  dsCanvas.style.minWidth = Math.max(devices.length * 52, 260) + 'px';
   charts.deviceSales?.destroy();
-  charts.deviceSales = new Chart(document.getElementById("chart-device-sales"), {
+  charts.deviceSales = new Chart(dsCanvas, {
     type:"bar",
     data:{ labels:devices, datasets:products.map((p,i)=>({
       label:p, data:devices.map(d=>map[d][p]||0), backgroundColor:colors[i%colors.length]
     })) },
-    options:{ plugins:{ legend:{ display:false } }, scales:{ x:{stacked:true}, y:{stacked:true,beginAtZero:true} } }
+    options:{ responsive:false, plugins:{ legend:{ display:false } }, scales:{ x:{ stacked:true, ticks:{ font:{size:8} } }, y:{ stacked:true, beginAtZero:true, ticks:{ font:{size:8} } } } }
   });
 }
 
@@ -185,7 +210,7 @@ function drawRankBar(sales) {
   charts.rank = new Chart(document.getElementById("chart-rank"), {
     type:"bar",
     data:{ labels:sorted.map(x=>x[0]), datasets:[{ label:"銷售數量", data:sorted.map(x=>x[1]), backgroundColor:"#2563eb" }] },
-    options:{ indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
+    options:{ responsive:true, maintainAspectRatio:false, indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ font:{size:8} } }, y:{ ticks:{ font:{size:8} } } } }
   });
 }
 
@@ -201,13 +226,10 @@ function drawTrend(sales) {
   charts.trend = new Chart(document.getElementById("chart-trend"), {
     type:"line",
     data:{ labels:days.map(d=>d.slice(5)), datasets:[
-      { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", tension:0.4, yAxisID:"y1" },
-      { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", tension:0.4, yAxisID:"y2" }
+      { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", tension:0.4, pointRadius:1, yAxisID:"y1" },
+      { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", tension:0.4, pointRadius:1, yAxisID:"y2" }
     ] },
-    options:{ plugins:{ legend:{ position:"bottom" } }, scales:{
-      y1:{ position:"left", beginAtZero:true },
-      y2:{ position:"right", beginAtZero:true, grid:{ drawOnChartArea:false } }
-    } }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom", labels:{ font:{size:9}, boxWidth:8, padding:5 } } }, scales:{ x:{ ticks:{ font:{size:8}, maxTicksLimit:10 } }, y1:{ position:"left", beginAtZero:true, ticks:{ font:{size:8} } }, y2:{ position:"right", beginAtZero:true, ticks:{ font:{size:8} }, grid:{ drawOnChartArea:false } } } }
   });
 }
 
