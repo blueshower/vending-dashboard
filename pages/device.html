@@ -20,26 +20,37 @@ async function loadDevices() {
   showLoading(true);
   try {
     const { company, devices: allowed } = getSession();
-    const res = await callAPI("/MachineState.aspx", { company });
     const now = new Date();
 
-    let machines = res.machine || [];
-    // 依權限過濾
+    // 同時呼叫 MachineState + Machine（設備名稱）
+    const [stateRes, nameRes] = await Promise.all([
+      callAPI("/MachineState.aspx", { company }),
+      callAPI("/Machine.aspx", { company }),
+    ]);
+
+    // 建立 code → name 對照表
+    const nameMap = {};
+    (nameRes.machine || []).forEach(m => { nameMap[m.code] = m.name; });
+
+    let machines = stateRes.machine || [];
     if (allowed && allowed.length > 0) {
       machines = machines.filter(m => allowed.includes(m.code));
     }
 
     const rows = machines.map((m, idx) => {
-      const diff = (now - new Date(m.uploadTime)) / 60000;
+      const diff   = (now - new Date(m.uploadTime)) / 60000;
       const online = diff <= 5;
-      const badge = online
+      const badge  = online
         ? `<span class="badge badge-green">連線</span>`
         : `<span class="badge badge-red">離線</span>`;
       const syncAgo = Math.floor(diff) + " 分鐘前";
+      const devName = nameMap[m.code] || "—";
+
       return `
         <tr>
           <td>${idx + 1}</td>
           <td><code style="font-size:12px">${m.code}</code></td>
+          <td><strong>${devName}</strong></td>
           <td>${badge}</td>
           <td>${m.uploadTime || "—"}</td>
           <td>${online ? "—" : syncAgo}</td>
@@ -58,13 +69,14 @@ async function loadDevices() {
             <tr>
               <th>#</th>
               <th>設備編號</th>
+              <th>設備名稱</th>
               <th>連線狀態</th>
               <th>最後同步時間</th>
               <th>離線時長</th>
               <th>溫度1</th>
             </tr>
           </thead>
-          <tbody>${rows || "<tr><td colspan='6' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+          <tbody>${rows || "<tr><td colspan='7' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
         </table>
       </div>`;
   } catch(e) {
