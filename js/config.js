@@ -1,5 +1,5 @@
 // ============================================================
-// config.js — 智慧分流與故障轉移版本
+// config.js — 全域設定檔 (支援 CF/Vercel 雙代理與故障轉移)
 // ============================================================
 
 const CONFIG = {
@@ -8,12 +8,12 @@ const CONFIG = {
 
   // ★ 代理設定
   PROXY_CF: "https://vending-proxy.blueshower-tw.workers.dev",
-  PROXY_VERCEL: "https://vending-dashboard-amber.vercel.app/api/proxy",
+  PROXY_VERCEL: "https://vending-dashboard-amber.vercel.app/api/proxy", // 這是你剛部署成功的網址
 
   // API Base 預設值
   API_BASE: "https://api.tenlifeservice.com",
 
-  // 離線判斷：超過幾分鐘算離線
+  // 離線判斷
   OFFLINE_MINUTES: 5
 };
 
@@ -45,6 +45,7 @@ function saveSession(data) { sessionStorage.setItem("session", JSON.stringify(da
 function getSession() { const s=sessionStorage.getItem("session"); return s?JSON.parse(s):null; }
 function clearSession() { sessionStorage.removeItem("session"); }
 
+// 權限檢查函式
 function requireLogin() {
   const s = getSession();
   if (!s) window.location.href = "../index.html";
@@ -61,38 +62,29 @@ async function callAPI(endpoint, params) {
   const apiBase = session.apiBase || CONFIG.API_BASE;
   const sign = await buildSign(params, session.token);
   const query = Object.keys(params).sort()
-    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
+    .map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
 
   const targetUrl = `${apiBase}${endpoint}?${query}&sign=${sign}`;
   const isHttps = targetUrl.startsWith("https://");
 
-  // 1. 如果是 http 直接走 Vercel
+  // 分流邏輯
   if (!isHttps) {
-    console.log("📡 [HTTP] 導向 Vercel 代理...");
-    return await _executeFetch(CONFIG.PROXY_VERCEL, targetUrl);
+    console.log("📡 [HTTP] 使用 Vercel 代理...");
+    return await _doFetch(CONFIG.PROXY_VERCEL, targetUrl);
   }
 
-  // 2. 如果是 https 優先試用 Cloudflare
   try {
     console.log("⚡ [HTTPS] 嘗試 Cloudflare 代理...");
-    return await _executeFetch(CONFIG.PROXY_CF, targetUrl);
+    return await _doFetch(CONFIG.PROXY_CF, targetUrl);
   } catch (err) {
-    console.warn("⚠️ Cloudflare 請求失敗或達上限，改由 Vercel 接手...", err.message);
-    return await _executeFetch(CONFIG.PROXY_VERCEL, targetUrl);
+    console.warn("⚠️ Cloudflare 失敗，轉向 Vercel 備援...", err.message);
+    return await _doFetch(CONFIG.PROXY_VERCEL, targetUrl);
   }
 }
 
-/**
- * 內部 Fetch 邏輯封裝
- */
-async function _executeFetch(proxyUrl, target) {
+async function _doFetch(proxyUrl, target) {
   const res = await fetch(`${proxyUrl}?url=${encodeURIComponent(target)}`);
-  
-  // 處理 Cloudflare 額度爆量 (1010 或 429)
-  if (res.status === 1010 || res.status === 429) {
-    throw new Error("Proxy Limit Reached");
-  }
-
+  if (res.status === 1010 || res.status === 429) throw new Error("Limit Reached");
   if (!res.ok) throw new Error(`API 錯誤 ${res.status}`);
   return await res.json();
 }
