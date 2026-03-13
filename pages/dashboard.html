@@ -7,39 +7,54 @@
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
-    /* ══ 全域 border-box 確保高度百分比包含 padding/border ── */
-    * {
-      box-sizing: border-box;
+    /* ══ Dashboard 佈局 ══════════════════════════════════════ */
+
+    /* ── 橫式：固定單頁不滾動 ── */
+    @media (orientation: landscape) {
+      html, body          { height: 100% !important; overflow: hidden !important; }
+      .app-layout         { height: 100vh !important; overflow: hidden !important; }
+      .main-content       { height: 100vh !important; min-height: unset !important; overflow: hidden !important; }
+      .page-body {
+        padding: 0 !important;
+        height: calc(100vh - 56px) !important;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-sizing: border-box;
+      }
+      #row-cards { height: 20%; }
+      #row-mid   { height: 40%; }
+      #row-bot   { height: 40%; }
+      .db-card canvas { flex: 1; min-height: 0; width: 100% !important; }
     }
 
-    html, body {
-      height: 100%;
-      overflow: hidden;
-      margin: 0;
+    /* ── 直式：可滾動，每列固定像素高度 ── */
+    @media (orientation: portrait) {
+      html, body          { height: auto !important; overflow: auto !important; }
+      .app-layout         { height: auto !important; overflow: visible !important; }
+      .main-content       { height: auto !important; min-height: unset !important; overflow: visible !important; }
+      .page-body {
+        padding: 0 !important;
+        height: auto !important;
+        display: flex;
+        flex-direction: column;
+        overflow: visible !important;
+        box-sizing: border-box;
+      }
+      #row-cards { height: 160px; }
+      #row-mid   { height: 320px; }
+      #row-bot   { height: 320px; }
+      .db-card canvas { height: 220px !important; width: 100% !important; flex: none; }
     }
 
-    .main-content {
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    /* topbar 固定 56px，page-body 佔剩餘全部 */
-    .page-body {
-      padding: 0;
-      height: calc(100vh - 56px);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    /* ── 上段 20%：統計卡片 ── */
+    /* ── 共用：統計卡片列 ── */
     #row-cards {
-      height: 20%;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 10px;
       padding: 10px 14px 5px;
-      overflow: hidden;
+      box-sizing: border-box;
+      flex-shrink: 0;
     }
     #row-cards .stat-card {
       margin: 0;
@@ -54,24 +69,24 @@
     #row-cards .stat-card .sub-label { font-size: 11px; }
     #row-cards .stat-card .icon      { font-size: 20px; top: 10px; right: 12px; }
 
-    /* ── 中段 40%：設備連線 | 設備銷售 | 每日趨勢 ── */
+    /* ── 共用：中段 ── */
     #row-mid {
-      height: 40%;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
       padding: 5px 14px;
-      overflow: hidden;
+      box-sizing: border-box;
+      flex-shrink: 0;
     }
 
-    /* ── 下段 40%：庫存 | 銷售排名 | 熱力圖 ── */
+    /* ── 共用：下段 ── */
     #row-bot {
-      height: 40%;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
       padding: 5px 14px 10px;
-      overflow: hidden;
+      box-sizing: border-box;
+      flex-shrink: 0;
     }
 
     /* ── 共用圖表卡片 ── */
@@ -99,7 +114,6 @@
       flex: 1;
       min-height: 0;
       width: 100% !important;
-      height: 100% !important;
     }
     /* 設備銷售：橫向捲動 */
     .db-card .x-scroll {
@@ -122,64 +136,6 @@
     .heatmap-table      { border-collapse: collapse; }
     .heatmap-table th   { padding: 1px 2px; font-size: 7px; color: var(--muted); font-weight: 500; white-space: nowrap; }
     .heatmap-table td   { width: 15px; height: 12px; border-radius: 2px; text-align: center; font-size: 6px; }
-
-    /* ════════════════════════════════════════════════════ */
-    /* 手機版直式優化 (max-width: 768px) */
-    /* ════════════════════════════════════════════════════ */
-    @media (max-width: 768px) {
-      /* 讓頁面變成可垂直滾動 */
-      .page-body {
-        height: auto;
-        overflow-y: auto;
-      }
-
-      /* 統計卡片區：改為2列，自動高度 */
-      #row-cards {
-        height: auto;
-        grid-template-columns: 1fr 1fr;
-        padding: 10px 10px 5px;
-      }
-
-      /* 中間與下方區塊：改為單列，自動高度，加大間距 */
-      #row-mid, #row-bot {
-        height: auto;
-        grid-template-columns: 1fr;
-        gap: 15px;
-        padding: 10px 10px;
-      }
-
-      #row-bot {
-        padding-bottom: 20px; /* 底部多留一點空間 */
-      }
-
-      /* 每個卡片設定最小高度，避免圖表太扁 */
-      .db-card {
-        min-height: 250px;
-      }
-
-      /* 統計卡片內文字微調 */
-      .stat-card .value {
-        font-size: 18px;
-      }
-      .stat-card .sub-label {
-        font-size: 10px;
-      }
-
-      /* 熱力圖允許橫向滾動 */
-      .heat-wrap {
-        overflow-x: auto;
-      }
-      .heatmap-table td {
-        width: 12px;
-        height: 10px;
-        font-size: 5px;
-      }
-
-      /* 圖表標題稍微縮小（可選） */
-      .db-card h3 {
-        font-size: 9px;
-      }
-    }
   </style>
 </head>
 <body>
@@ -309,6 +265,7 @@ function renderDashboard() {
       <div class="sub-label">NT$ ${todayAmt.toLocaleString()}</div>
     </div>`;
 
+
   drawConnectionPie(online, offline);
   drawInventoryPie(invFull, invNormal, invLow, invShort);
   drawDeviceSales(monthSales);
@@ -347,10 +304,9 @@ function drawDeviceSales(sales) {
   const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
   const dsCanvas = document.getElementById("chart-device-sales");
   const dsWrap = dsCanvas.parentElement;
-  // 只設定寬度，高度交由 CSS 控制
+  const dsH = dsWrap.clientHeight || 100;
+  dsCanvas.style.height = dsH + "px";
   dsCanvas.style.width  = Math.max(devices.length * 56, dsWrap.clientWidth || 200) + "px";
-  dsCanvas.style.height = '';   // 清除內聯高度
-
   charts.deviceSales?.destroy();
   charts.deviceSales = new Chart(dsCanvas, {
     type:"bar",
