@@ -50,8 +50,8 @@ async function loadInventory() {
       };
     }));
 
-    // 預訂資料
-    const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future:1 });
+    // 預訂資料（只查當天）
+    const orderRes = await callAPI("/OrderList.aspx", { begin: end, company, end, future:1 });
     const orders = orderRes.order || [];
 
     const rows = [];
