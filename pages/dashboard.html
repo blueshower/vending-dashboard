@@ -15,7 +15,7 @@
     html, body {
       height: 100%;
       overflow: hidden;
-      margin: 0;          /* 避免預設邊距影響計算 */
+      margin: 0;
     }
 
     .main-content {
@@ -39,7 +39,7 @@
       grid-template-columns: repeat(4, 1fr);
       gap: 10px;
       padding: 10px 14px 5px;
-      overflow: hidden;          /* 防止內容溢出 */
+      overflow: hidden;
     }
     #row-cards .stat-card {
       margin: 0;
@@ -61,7 +61,7 @@
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
       padding: 5px 14px;
-      overflow: hidden;          /* 防止內容溢出 */
+      overflow: hidden;
     }
 
     /* ── 下段 40%：庫存 | 銷售排名 | 熱力圖 ── */
@@ -71,7 +71,7 @@
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
       padding: 5px 14px 10px;
-      overflow: hidden;          /* 防止內容溢出 */
+      overflow: hidden;
     }
 
     /* ── 共用圖表卡片 ── */
@@ -83,7 +83,7 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      min-height: 0;            /* 允許 flex 子元素收縮 */
+      min-height: 0;
     }
     .db-card h3 {
       font-size: 10px;
@@ -99,7 +99,7 @@
       flex: 1;
       min-height: 0;
       width: 100% !important;
-      height: 100% !important;  /* 確保 canvas 填滿容器 */
+      height: 100% !important;
     }
     /* 設備銷售：橫向捲動 */
     .db-card .x-scroll {
@@ -122,6 +122,64 @@
     .heatmap-table      { border-collapse: collapse; }
     .heatmap-table th   { padding: 1px 2px; font-size: 7px; color: var(--muted); font-weight: 500; white-space: nowrap; }
     .heatmap-table td   { width: 15px; height: 12px; border-radius: 2px; text-align: center; font-size: 6px; }
+
+    /* ════════════════════════════════════════════════════ */
+    /* 手機版直式優化 (max-width: 768px) */
+    /* ════════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      /* 讓頁面變成可垂直滾動 */
+      .page-body {
+        height: auto;
+        overflow-y: auto;
+      }
+
+      /* 統計卡片區：改為2列，自動高度 */
+      #row-cards {
+        height: auto;
+        grid-template-columns: 1fr 1fr;
+        padding: 10px 10px 5px;
+      }
+
+      /* 中間與下方區塊：改為單列，自動高度，加大間距 */
+      #row-mid, #row-bot {
+        height: auto;
+        grid-template-columns: 1fr;
+        gap: 15px;
+        padding: 10px 10px;
+      }
+
+      #row-bot {
+        padding-bottom: 20px; /* 底部多留一點空間 */
+      }
+
+      /* 每個卡片設定最小高度，避免圖表太扁 */
+      .db-card {
+        min-height: 250px;
+      }
+
+      /* 統計卡片內文字微調 */
+      .stat-card .value {
+        font-size: 18px;
+      }
+      .stat-card .sub-label {
+        font-size: 10px;
+      }
+
+      /* 熱力圖允許橫向滾動 */
+      .heat-wrap {
+        overflow-x: auto;
+      }
+      .heatmap-table td {
+        width: 12px;
+        height: 10px;
+        font-size: 5px;
+      }
+
+      /* 圖表標題稍微縮小（可選） */
+      .db-card h3 {
+        font-size: 9px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -251,7 +309,6 @@ function renderDashboard() {
       <div class="sub-label">NT$ ${todayAmt.toLocaleString()}</div>
     </div>`;
 
-
   drawConnectionPie(online, offline);
   drawInventoryPie(invFull, invNormal, invLow, invShort);
   drawDeviceSales(monthSales);
@@ -290,9 +347,9 @@ function drawDeviceSales(sales) {
   const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
   const dsCanvas = document.getElementById("chart-device-sales");
   const dsWrap = dsCanvas.parentElement;
-  // 只設定寬度，高度交由 CSS 控制（.x-scroll canvas 已設 height:100%）
+  // 只設定寬度，高度交由 CSS 控制
   dsCanvas.style.width  = Math.max(devices.length * 56, dsWrap.clientWidth || 200) + "px";
-  dsCanvas.style.height = '';   // 清除可能殘留的內聯高度，讓 CSS 生效
+  dsCanvas.style.height = '';   // 清除內聯高度
 
   charts.deviceSales?.destroy();
   charts.deviceSales = new Chart(dsCanvas, {
