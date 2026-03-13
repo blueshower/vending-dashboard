@@ -7,46 +7,113 @@
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
-    /* ══ Dashboard 單頁顯示 ══════════════════════════════ */
-    .page-body   { padding: 10px 14px; overflow: hidden; }
+    /* ══ Dashboard 固定分割佈局 ══════════════════════════════ */
+    html, body { height: 100%; overflow: hidden; }
 
-    /* 統計卡片列 */
-    .stats-grid  { gap: 8px; margin-bottom: 8px; }
-    .stat-card   { padding: 10px 12px; border-radius: 8px; }
-    .stat-card .label     { font-size: 10px; }
-    .stat-card .value     { font-size: 20px; margin: 1px 0; }
-    .stat-card .sub-label { font-size: 10px; }
-    .stat-card .icon      { font-size: 18px; top: 10px; right: 10px; }
+    .main-content { height: 100vh; overflow: hidden; }
 
-    /* 三欄圖表區：撐滿剩餘高度 */
-    .charts-grid {
-      grid-template-columns: 1fr 2fr 1.2fr;
-      gap: 8px;
-      margin-bottom: 0;
-      /* 100vh - topbar(56px) - page-body padding(20px) - stats(~62px) - gap(8px) */
-      height: calc(100vh - 56px - 20px - 62px - 8px);
+    /* topbar 固定 56px，page-body 佔剩餘全部 */
+    .page-body {
+      padding: 0;
+      height: calc(100vh - 56px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-sizing: border-box;
     }
 
-    /* 每一欄：平均分配上下兩個 card */
-    .chart-col  { gap: 8px; height: 100%; }
-    .chart-col .chart-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    /* ── 上段 20%：統計卡片 ── */
+    #row-cards {
+      height: 20%;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding: 10px 14px 5px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+    #row-cards .stat-card {
+      margin: 0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    #row-cards .stat-card .label     { font-size: 11px; }
+    #row-cards .stat-card .value     { font-size: 22px; margin: 2px 0 1px; }
+    #row-cards .stat-card .sub-label { font-size: 11px; }
+    #row-cards .stat-card .icon      { font-size: 20px; top: 10px; right: 12px; }
 
-    /* card 內部 */
-    .chart-card  { padding: 8px 10px; border-radius: 8px; overflow: hidden; }
-    .chart-card h3 { font-size: 10px; margin-bottom: 4px; letter-spacing: .2px; flex-shrink: 0; }
+    /* ── 中段 40%：設備連線 | 設備銷售 | 每日趨勢 ── */
+    #row-mid {
+      height: 40%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding: 5px 14px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
 
+    /* ── 下段 40%：庫存 | 銷售排名 | 熱力圖 ── */
+    #row-bot {
+      height: 40%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding: 5px 14px 10px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+
+    /* ── 共用圖表卡片 ── */
+    .db-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .db-card h3 {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .3px;
+      margin: 0 0 4px;
+      flex-shrink: 0;
+    }
     /* canvas 填滿剩餘空間 */
-    .chart-card canvas { flex: 1; min-height: 0; width: 100% !important; }
-
-    /* heatmap */
-    .heatmap-wrap { flex: 1; overflow: auto; }
-    .heatmap-table      { border-collapse: collapse; width: 100%; }
-    .heatmap-table th   { padding: 1px 2px; font-size: 7px; color: var(--muted); font-weight: 500; }
+    .db-card canvas {
+      flex: 1;
+      min-height: 0;
+      width: 100% !important;
+    }
+    /* 設備銷售：橫向捲動 */
+    .db-card .x-scroll {
+      flex: 1;
+      overflow-x: auto;
+      overflow-y: hidden;
+      min-height: 0;
+    }
+    .db-card .x-scroll canvas {
+      height: 100% !important;
+      width: auto !important;
+      flex: none;
+    }
+    /* 熱力圖 */
+    .db-card .heat-wrap {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+    }
+    .heatmap-table      { border-collapse: collapse; }
+    .heatmap-table th   { padding: 1px 2px; font-size: 7px; color: var(--muted); font-weight: 500; white-space: nowrap; }
     .heatmap-table td   { width: 15px; height: 12px; border-radius: 2px; text-align: center; font-size: 6px; }
-
-    /* 設備銷售 overflow */
-    .chart-card .overflow-x { flex: 1; overflow-x: auto; overflow-y: hidden; min-height: 0; }
-    .chart-card .overflow-x canvas { width: auto !important; height: 100% !important; }
   </style>
 </head>
 <body>
@@ -107,11 +174,22 @@ async function loadAll() {
 }
 
 function buildSkeleton() {
-  return `<div class="stats-grid" id="stats-grid">${
-    ["設備狀態","庫存狀態","本月交易","今日交易"].map(l=>
-      `<div class="stat-card"><div class="label">${l}</div><div class="value">…</div></div>`
-    ).join("")
-  }</div><div class="charts-grid" id="charts-grid"></div>`;
+  return `
+    <div id="row-cards">
+      ${["設備狀態","庫存狀態","本月交易","今日交易"].map(l=>
+        `<div class="stat-card"><div class="label">${l}</div><div class="value">…</div></div>`
+      ).join("")}
+    </div>
+    <div id="row-mid">
+      <div class="db-card"><h3>設備連線狀態</h3><canvas id="chart-conn"></canvas></div>
+      <div class="db-card"><h3>各設備商品販售統計</h3><div class="x-scroll"><canvas id="chart-device-sales"></canvas></div></div>
+      <div class="db-card"><h3>每日交易趨勢（筆數、金額）</h3><canvas id="chart-trend"></canvas></div>
+    </div>
+    <div id="row-bot">
+      <div class="db-card"><h3>庫存狀態</h3><canvas id="chart-inv"></canvas></div>
+      <div class="db-card"><h3>商品銷售排名</h3><canvas id="chart-rank"></canvas></div>
+      <div class="db-card"><h3>銷售熱力圖（週×時段）</h3><div class="heat-wrap" id="heatmap-wrap"></div></div>
+    </div>`;
 }
 
 function renderDashboard() {
@@ -139,7 +217,7 @@ function renderDashboard() {
   const todaySales = monthSales.filter(s => s.time?.startsWith(today));
   const todayAmt = todaySales.reduce((a,s) => a+(s.price||0), 0);
 
-  document.getElementById("stats-grid").innerHTML = `
+  document.getElementById("row-cards").innerHTML = `
     <div class="stat-card" onclick="location.href='device.html'">
       <div class="icon">🖥️</div>
       <div class="label">設備狀態</div>
@@ -165,19 +243,6 @@ function renderDashboard() {
       <div class="sub-label">NT$ ${todayAmt.toLocaleString()}</div>
     </div>`;
 
-  document.getElementById("charts-grid").innerHTML = `
-    <div class="chart-col">
-      <div class="chart-card"><h3>連線狀態</h3><canvas id="chart-conn"></canvas></div>
-      <div class="chart-card"><h3>庫存狀態</h3><canvas id="chart-inv"></canvas></div>
-    </div>
-    <div class="chart-col">
-      <div class="chart-card"><h3>各設備商品販售統計</h3><div class="overflow-x"><canvas id="chart-device-sales"></canvas></div></div>
-      <div class="chart-card"><h3>商品銷售排名</h3><canvas id="chart-rank"></canvas></div>
-    </div>
-    <div class="chart-col">
-      <div class="chart-card"><h3>每日交易趨勢</h3><canvas id="chart-trend"></canvas></div>
-      <div class="chart-card"><h3>銷售熱力圖（週×時段）</h3><div class="heatmap-wrap" id="heatmap-wrap"></div></div>
-    </div>`;
 
   drawConnectionPie(online, offline);
   drawInventoryPie(invFull, invNormal, invLow, invShort);
@@ -217,8 +282,9 @@ function drawDeviceSales(sales) {
   const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
   const dsCanvas = document.getElementById("chart-device-sales");
   const dsWrap = dsCanvas.parentElement;
-  dsCanvas.style.width = Math.max(devices.length * 54, 260) + 'px';
-  dsCanvas.style.height = (dsWrap.clientHeight || 120) + 'px';
+  const dsH = dsWrap.clientHeight || 100;
+  dsCanvas.style.height = dsH + "px";
+  dsCanvas.style.width  = Math.max(devices.length * 56, dsWrap.clientWidth || 200) + "px";
   charts.deviceSales?.destroy();
   charts.deviceSales = new Chart(dsCanvas, {
     type:"bar",
