@@ -7,7 +7,7 @@ const CONFIG = {
 
   // ★ 代理設定
   PROXY_CF: "https://vending-proxy.blueshower-tw.workers.dev",
-  PROXY_VERCEL: "https://vending-dashboard-amber.vercel.app/api/proxy"
+  PROXY_VERCEL: "https://vending-dashboard-amber.vercel.app/api/proxy",
 
   API_BASE: "https://api.tenlifeservice.com",
   OFFLINE_MINUTES: 5,
