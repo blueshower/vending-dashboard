@@ -14,7 +14,7 @@
     <p class="sub">請輸入登入資訊</p>
     <div class="form-group">
       <label for="inp-company">公司編號</label>
-      <input id="inp-company" type="text" placeholder="例：2000xxx" />
+      <input id="inp-company" type="text" placeholder="例：2000116" />
     </div>
     <div class="form-group">
       <label for="inp-user">帳號</label>
@@ -65,14 +65,14 @@ async function doLogin() {
 
     let found = null;
     for (let i = 1; i < rows.length; i++) {
-      const [col_company, col_user, col_pass, col_token, col_devices, col_username, col_active] = rows[i];
+      const [col_company, col_user, col_pass, col_token, col_devices, col_username, col_active, col_path] = rows[i];
       if (
         col_company?.trim() === company &&
         col_user?.trim()    === user    &&
         col_pass?.trim()    === pass    &&
         col_active?.trim().toUpperCase() === "TRUE"
       ) {
-        found = { col_token, col_devices, col_username };
+        found = { col_token, col_devices, col_username, col_path };
         break;
       }
     }
@@ -92,6 +92,7 @@ async function doLogin() {
       token:    found.col_token?.trim(),
       devices,
       username: found.col_username?.trim() || user,
+      apiBase:  found.col_path?.trim() || CONFIG.API_BASE,
     });
 
     window.location.href = "pages/dashboard.html";
