@@ -7,17 +7,20 @@
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
-    /* ══ Dashboard 固定分割佈局 ══════════════════════════════ */
+    /* ══ Dashboard 嚴格固定佈局 ══════════════════════════════ */
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      padding: 0; 
+      overflow: hidden; /* 徹底禁止全頁捲軸 */
+    }
 
-    /* 覆寫全域 CSS 防止撐高 */
-    html, body          { height: 100% !important; overflow: hidden !important; }
-    .app-layout         { height: 100vh !important; overflow: hidden !important; }
-    .main-content       { height: 100vh !important; min-height: unset !important; overflow: hidden !important; }
+    .main-content { height: 100vh; overflow: hidden; }
 
-    /* topbar 固定 56px，page-body 佔剩餘全部 */
+    /* Topbar 固定 56px，page-body 佔據剩餘全部空間 */
     .page-body {
-      padding: 0 !important;
-      height: calc(100vh - 56px) !important;
+      padding: 0;
+      height: calc(100vh - 56px);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -29,23 +32,25 @@
       height: 20%;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
+      gap: 12px;
       padding: 10px 14px 5px;
       box-sizing: border-box;
       flex-shrink: 0;
     }
     #row-cards .stat-card {
       margin: 0;
-      padding: 10px 14px;
+      padding: 12px;
       border-radius: 10px;
       display: flex;
       flex-direction: column;
       justify-content: center;
+      position: relative;
+      cursor: pointer;
     }
-    #row-cards .stat-card .label     { font-size: 11px; }
-    #row-cards .stat-card .value     { font-size: 22px; margin: 2px 0 1px; }
+    #row-cards .stat-card .label     { font-size: 11px; opacity: 0.8; }
+    #row-cards .stat-card .value     { font-size: 24px; font-weight: 700; margin: 2px 0; }
     #row-cards .stat-card .sub-label { font-size: 11px; }
-    #row-cards .stat-card .icon      { font-size: 20px; top: 10px; right: 12px; }
+    #row-cards .stat-card .icon      { position: absolute; font-size: 24px; top: 12px; right: 12px; opacity: 0.3; }
 
     /* ── 中段 40%：設備連線 | 設備銷售 | 每日趨勢 ── */
     #row-mid {
@@ -56,6 +61,7 @@
       padding: 5px 14px;
       box-sizing: border-box;
       flex-shrink: 0;
+      min-height: 0; /* 重要：防止 flex 項目被內容撐開 */
     }
 
     /* ── 下段 40%：庫存 | 銷售排名 | 熱力圖 ── */
@@ -67,6 +73,7 @@
       padding: 5px 14px 10px;
       box-sizing: border-box;
       flex-shrink: 0;
+      min-height: 0;
     }
 
     /* ── 共用圖表卡片 ── */
@@ -74,48 +81,55 @@
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 8px 10px;
+      padding: 10px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       min-height: 0;
+      position: relative;
     }
     .db-card h3 {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .3px;
-      margin: 0 0 4px;
+      margin: 0 0 8px;
       flex-shrink: 0;
     }
-    /* canvas 填滿剩餘空間 */
-    .db-card canvas {
+    
+    /* 強迫 Canvas 填滿容器且不溢出 */
+    .db-card .canvas-container {
       flex: 1;
       min-height: 0;
-      width: 100% !important;
+      position: relative;
+      width: 100%;
     }
-    /* 設備銷售：橫向捲動 */
+    .db-card canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* 設備銷售：特定橫向捲動處理 */
     .db-card .x-scroll {
       flex: 1;
       overflow-x: auto;
       overflow-y: hidden;
       min-height: 0;
+      width: 100%;
     }
     .db-card .x-scroll canvas {
       height: 100% !important;
-      width: auto !important;
-      flex: none;
+      width: auto !important; /* 寬度由 JS 計算 */
     }
-    /* 熱力圖 */
+
+    /* 熱力圖優化 */
     .db-card .heat-wrap {
       flex: 1;
       overflow: auto;
       min-height: 0;
     }
-    .heatmap-table      { border-collapse: collapse; }
-    .heatmap-table th   { padding: 1px 2px; font-size: 7px; color: var(--muted); font-weight: 500; white-space: nowrap; }
-    .heatmap-table td   { width: 15px; height: 12px; border-radius: 2px; text-align: center; font-size: 6px; }
+    .heatmap-table { width: 100%; border-collapse: separate; border-spacing: 1px; table-layout: fixed; }
+    .heatmap-table th { font-size: 8px; color: var(--muted); font-weight: normal; text-align: center; }
+    .heatmap-table td { height: 14px; border-radius: 2px; text-align: center; font-size: 7px; color: #fff; }
   </style>
 </head>
 <body>
@@ -123,10 +137,12 @@
 <script src="../js/sidebar.js"></script>
 <script>
 /* ── Chart.js 全域設定 ── */
-Chart.defaults.font.size   = 9;
+Chart.defaults.font.size   = 10;
 Chart.defaults.font.family = "'Noto Sans TC','Microsoft JhengHei',sans-serif";
+Chart.defaults.maintainAspectRatio = false; // 關鍵：解除長寬比鎖定
+Chart.defaults.responsive = true;
 Chart.defaults.plugins.legend.labels.boxWidth = 8;
-Chart.defaults.plugins.legend.labels.padding  = 5;
+Chart.defaults.plugins.legend.labels.padding  = 8;
 
 let G = { devices:[], stateMap:{}, inventoryMap:{}, orders:[], sales:[] };
 let charts = {};
@@ -166,8 +182,7 @@ async function loadAll() {
     G.orders = orderRes.order || [];
     const salesRes = await callAPI("/Sales.aspx", { begin, company, end });
     const allSales = salesRes.sales || [];
-    const hasFilter = Array.isArray(G.devices) && G.devices.length > 0;
-    G.sales = hasFilter ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
+    G.sales = G.devices.length > 0 ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
 
     renderDashboard();
   } catch(e) {
@@ -179,18 +194,18 @@ function buildSkeleton() {
   return `
     <div id="row-cards">
       ${["設備狀態","庫存狀態","本月交易","今日交易"].map(l=>
-        `<div class="stat-card"><div class="label">${l}</div><div class="value">…</div></div>`
+        `<div class="stat-card"><div class="label">${l}</div><div class="value">...</div></div>`
       ).join("")}
     </div>
     <div id="row-mid">
-      <div class="db-card"><h3>設備連線狀態</h3><canvas id="chart-conn"></canvas></div>
-      <div class="db-card"><h3>各設備商品販售統計</h3><div class="x-scroll"><canvas id="chart-device-sales"></canvas></div></div>
-      <div class="db-card"><h3>每日交易趨勢（筆數、金額）</h3><canvas id="chart-trend"></canvas></div>
+      <div class="db-card"><h3>設備連線狀態</h3><div class="canvas-container"><canvas id="chart-conn"></canvas></div></div>
+      <div class="db-card"><h3>各設備商品銷售</h3><div class="x-scroll"><canvas id="chart-device-sales"></canvas></div></div>
+      <div class="db-card"><h3>每日交易趨勢</h3><div class="canvas-container"><canvas id="chart-trend"></canvas></div></div>
     </div>
     <div id="row-bot">
-      <div class="db-card"><h3>庫存狀態</h3><canvas id="chart-inv"></canvas></div>
-      <div class="db-card"><h3>商品銷售排名</h3><canvas id="chart-rank"></canvas></div>
-      <div class="db-card"><h3>銷售熱力圖（週×時段）</h3><div class="heat-wrap" id="heatmap-wrap"></div></div>
+      <div class="db-card"><h3>庫存健康度</h3><div class="canvas-container"><canvas id="chart-inv"></canvas></div></div>
+      <div class="db-card"><h3>熱銷商品排行</h3><div class="canvas-container"><canvas id="chart-rank"></canvas></div></div>
+      <div class="db-card"><h3>銷售熱力圖 (週×時)</h3><div class="heat-wrap" id="heatmap-wrap"></div></div>
     </div>`;
 }
 
@@ -245,7 +260,6 @@ function renderDashboard() {
       <div class="sub-label">NT$ ${todayAmt.toLocaleString()}</div>
     </div>`;
 
-
   drawConnectionPie(online, offline);
   drawInventoryPie(invFull, invNormal, invLow, invShort);
   drawDeviceSales(monthSales);
@@ -259,7 +273,7 @@ function drawConnectionPie(on, off) {
   charts.conn = new Chart(document.getElementById("chart-conn"), {
     type:"doughnut",
     data:{ labels:["連線","離線"], datasets:[{ data:[on,off], backgroundColor:["#16a34a","#dc2626"] }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom", labels:{ font:{size:8}, boxWidth:7, padding:4 } } }, cutout:"62%" }
+    options:{ plugins:{ legend:{ position:"right" } }, cutout:"65%" }
   });
 }
 
@@ -268,7 +282,7 @@ function drawInventoryPie(f,n,l,s) {
   charts.inv = new Chart(document.getElementById("chart-inv"), {
     type:"doughnut",
     data:{ labels:["充足","正常","稍低","不足"], datasets:[{ data:[f,n,l,s], backgroundColor:["#16a34a","#2563eb","#d97706","#dc2626"] }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom", labels:{ font:{size:8}, boxWidth:7, padding:4 } } }, cutout:"62%" }
+    options:{ plugins:{ legend:{ position:"right" } }, cutout:"65%" }
   });
 }
 
@@ -282,18 +296,22 @@ function drawDeviceSales(sales) {
   });
   const devices=Object.keys(map), products=[...productSet];
   const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
+  
   const dsCanvas = document.getElementById("chart-device-sales");
   const dsWrap = dsCanvas.parentElement;
-  const dsH = dsWrap.clientHeight || 100;
-  dsCanvas.style.height = dsH + "px";
-  dsCanvas.style.width  = Math.max(devices.length * 56, dsWrap.clientWidth || 200) + "px";
+  dsCanvas.style.width = Math.max(devices.length * 50, dsWrap.clientWidth) + "px";
+
   charts.deviceSales?.destroy();
   charts.deviceSales = new Chart(dsCanvas, {
     type:"bar",
     data:{ labels:devices, datasets:products.map((p,i)=>({
       label:p, data:devices.map(d=>map[d][p]||0), backgroundColor:colors[i%colors.length]
     })) },
-    options:{ responsive:false, plugins:{ legend:{ display:false } }, scales:{ x:{ stacked:true, ticks:{ font:{size:8} } }, y:{ stacked:true, beginAtZero:true, ticks:{ font:{size:8} } } } }
+    options:{ 
+      responsive: false, // 因為手動控制寬度，所以關閉 responsive 以免縮放衝突
+      scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } },
+      plugins:{ legend:{ display:false } }
+    }
   });
 }
 
@@ -304,8 +322,8 @@ function drawRankBar(sales) {
   charts.rank?.destroy();
   charts.rank = new Chart(document.getElementById("chart-rank"), {
     type:"bar",
-    data:{ labels:sorted.map(x=>x[0]), datasets:[{ label:"銷售數量", data:sorted.map(x=>x[1]), backgroundColor:"#2563eb" }] },
-    options:{ responsive:true, maintainAspectRatio:false, indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ font:{size:8} } }, y:{ ticks:{ font:{size:8} } } } }
+    data:{ labels:sorted.map(x=>x[0]), datasets:[{ data:sorted.map(x=>x[1]), backgroundColor:"#3b82f6" }] },
+    options:{ indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
   });
 }
 
@@ -321,10 +339,15 @@ function drawTrend(sales) {
   charts.trend = new Chart(document.getElementById("chart-trend"), {
     type:"line",
     data:{ labels:days.map(d=>d.slice(5)), datasets:[
-      { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", tension:0.4, pointRadius:1, yAxisID:"y1" },
-      { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", tension:0.4, pointRadius:1, yAxisID:"y2" }
+      { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", yAxisID:"y1", tension:0.3 },
+      { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", yAxisID:"y2", tension:0.3 }
     ] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom", labels:{ font:{size:8}, boxWidth:7, padding:4 } } }, scales:{ x:{ ticks:{ font:{size:8}, maxTicksLimit:10 } }, y1:{ position:"left", beginAtZero:true, ticks:{ font:{size:8} } }, y2:{ position:"right", beginAtZero:true, ticks:{ font:{size:8} }, grid:{ drawOnChartArea:false } } } }
+    options:{ 
+      scales:{ 
+        y1:{ position:"left", beginAtZero:true }, 
+        y2:{ position:"right", beginAtZero:true, grid:{ drawOnChartArea:false } } 
+      } 
+    }
   });
 }
 
@@ -337,14 +360,14 @@ function drawHeatmap(sales) {
     grid[(d.getDay()+6)%7][d.getHours()]++;
   });
   const max=Math.max(...grid.flat(),1);
-  const getColor=v=>`rgba(37,99,235,${(v/max*0.85+0.05).toFixed(2)})`;
+  const getColor=v=> v===0 ? "transparent" : `rgba(37,99,235,${(v/max*0.8 + 0.2).toFixed(2)})`;
 
   let html=`<table class="heatmap-table"><tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   days.forEach((day,di) => {
-    html+=`<tr><th>週${day}</th>`;
+    html+=`<tr><th>${day}</th>`;
     hours.forEach(h => {
       const v=grid[di][h];
-      html+=`<td style="background:${getColor(v)};color:${v>max*0.5?"#fff":"transparent"}" title="週${day} ${h}時：${v}筆">${v||""}</td>`;
+      html+=`<td style="background:${getColor(v)}" title="週${day} ${h}時：${v}筆">${v||""}</td>`;
     });
     html+="</tr>";
   });
