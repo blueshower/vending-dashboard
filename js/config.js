@@ -6,6 +6,10 @@ const CONFIG = {
   // ★ Google Sheet ID（帳號管理用）
   SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
+  // ★★★ 填入你的 Cloudflare Worker 網址 ★★★
+  // 格式：https://你的名稱.workers.dev
+  PROXY_BASE: "https://vending-proxy.blueshower-tw.workers.dev/",
+
   // API Base（不需修改）
   API_BASE: "https://api.tenlifeservice.com",
 
@@ -45,34 +49,17 @@ function requireLogin() {
   return s;
 }
 
-// ── API 呼叫（多個 proxy 自動備援）──
-const PROXIES = [
-  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
-];
-
 async function callAPI(endpoint, params) {
   const session = getSession();
   if (!session) throw new Error("未登入");
   const sign = await buildSign(params, session.token);
   const query = Object.keys(params).sort()
     .map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
-  const targetUrl = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
 
-  // 依序嘗試每個 proxy
-  let lastErr;
-  for (const makeProxy of PROXIES) {
-    try {
-      const proxyUrl = makeProxy(targetUrl);
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) { lastErr = new Error(`HTTP ${res.status}`); continue; }
-      const text = await res.text();
-      return JSON.parse(text);
-    } catch(e) {
-      lastErr = e;
-      continue;
-    }
-  }
-  throw new Error("所有 Proxy 均失敗：" + lastErr?.message);
+  const targetUrl = `${CONFIG.API_BASE}${endpoint}?${query}&sign=${sign}`;
+  const proxyUrl  = `${CONFIG.PROXY_BASE}?url=${encodeURIComponent(targetUrl)}`;
+
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error(`Proxy 錯誤 ${res.status}`);
+  return await res.json();
 }
