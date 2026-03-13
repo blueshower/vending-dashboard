@@ -11,7 +11,6 @@
 <script src="../js/sidebar.js"></script>
 <script>
 let charts = {};
-const RANGE = "month"; // ← 固定為本月
 
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("本月交易明細", "transaction");
@@ -22,15 +21,25 @@ window.addEventListener("DOMContentLoaded", async () => {
 async function loadTransaction() {
   showLoading(true);
   try {
-    const { company, devices: allowed } = getSession();
+    const session = getSession();
+    const { company } = session;
+    // allowed：空陣列或無值 = 看全部；有值 = 只看指定設備
+    const allowed = session.devices;
+    const hasFilter = Array.isArray(allowed) && allowed.length > 0;
+
     const today = getToday();
     const begin = getMonthStart();
 
     const salesRes = await callAPI("/Sales.aspx", { begin, company, end: today });
+
+    // Step1：只保留成功交易
     let sales = (salesRes.sales || []).filter(s => s.state === 1);
-    if (allowed && allowed.length > 0) {
+
+    // Step2：依設備權限過濾（有設定才過濾）
+    if (hasFilter) {
       sales = sales.filter(s => allowed.includes(s.code));
     }
+
     renderTransaction(sales);
   } catch(e) {
     document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px">載入失敗：${e.message}</p>`;
@@ -52,7 +61,7 @@ function renderTransaction(sales) {
     </tr>`).join("");
 
   document.getElementById("page-body").innerHTML = `
-    <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center">
+    <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <span style="background:#dbeafe;color:#1e40af;padding:4px 14px;border-radius:99px;font-size:12px;font-weight:700">📅 本月</span>
       <button class="btn-icon" onclick="location.href='transaction_today.html'">📌 切換今日</button>
       <span style="color:#64748b;font-size:13px">共 ${sales.length} 筆 ／ 合計 NT$ ${totalAmt.toLocaleString()}</span>
@@ -82,44 +91,34 @@ function drawWeekly(sales) {
   const map = {};
   sales.forEach(s => {
     if (!s.time) return;
-    const week = Math.ceil(new Date(s.time.replace(" ","T")).getDate() / 7);
-    const key = `第${week}週`;
+    const key = `第${Math.ceil(new Date(s.time.replace(" ","T")).getDate()/7)}週`;
     map[key] = (map[key]||0)+1;
   });
   const labels = Object.keys(map).sort();
   charts.week?.destroy();
   charts.week = new Chart(document.getElementById("chart-week"), {
-    type:"bar",
-    data:{ labels, datasets:[{ label:"筆數", data:labels.map(k=>map[k]), backgroundColor:"#2563eb" }] },
+    type:"bar", data:{ labels, datasets:[{ label:"筆數", data:labels.map(k=>map[k]), backgroundColor:"#2563eb" }] },
     options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
   });
 }
 
 function drawDOW(sales) {
-  const days=["週一","週二","週三","週四","週五","週六","週日"];
-  const cnt=Array(7).fill(0);
-  sales.forEach(s => {
-    if (!s.time) return;
-    cnt[(new Date(s.time.replace(" ","T")).getDay()+6)%7]++;
-  });
+  const days=["週一","週二","週三","週四","週五","週六","週日"], cnt=Array(7).fill(0);
+  sales.forEach(s => { if(s.time) cnt[(new Date(s.time.replace(" ","T")).getDay()+6)%7]++; });
   charts.dow?.destroy();
   charts.dow = new Chart(document.getElementById("chart-dow"), {
-    type:"bar",
-    data:{ labels:days, datasets:[{ label:"筆數", data:cnt, backgroundColor:"#16a34a" }] },
+    type:"bar", data:{ labels:days, datasets:[{ label:"筆數", data:cnt, backgroundColor:"#16a34a" }] },
     options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
   });
 }
 
 function drawHourly(sales) {
   const cnt=Array(24).fill(0);
-  sales.forEach(s => {
-    if (!s.time) return;
-    cnt[new Date(s.time.replace(" ","T")).getHours()]++;
-  });
+  sales.forEach(s => { if(s.time) cnt[new Date(s.time.replace(" ","T")).getHours()]++; });
   charts.hour?.destroy();
   charts.hour = new Chart(document.getElementById("chart-hour"), {
-    type:"line",
-    data:{ labels:Array.from({length:24},(_,i)=>`${i}時`), datasets:[{ label:"筆數", data:cnt, borderColor:"#d97706", tension:0.4, fill:true, backgroundColor:"rgba(217,119,6,.1)" }] },
+    type:"line", data:{ labels:Array.from({length:24},(_,i)=>`${i}時`),
+    datasets:[{ label:"筆數", data:cnt, borderColor:"#d97706", tension:0.4, fill:true, backgroundColor:"rgba(217,119,6,.1)" }] },
     options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
   });
 }
@@ -129,8 +128,7 @@ function drawPriceDist(sales) {
   const cnt=ranges.map(([lo,hi])=>sales.filter(s=>(s.price||0)>=lo&&(s.price||0)<=hi).length);
   charts.price?.destroy();
   charts.price = new Chart(document.getElementById("chart-price"), {
-    type:"bar",
-    data:{ labels:ranges.map(r=>r[2]), datasets:[{ label:"筆數", data:cnt, backgroundColor:"#7c3aed" }] },
+    type:"bar", data:{ labels:ranges.map(r=>r[2]), datasets:[{ label:"筆數", data:cnt, backgroundColor:"#7c3aed" }] },
     options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } }
   });
 }
