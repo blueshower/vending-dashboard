@@ -7,6 +7,7 @@
 </head>
 <body>
 <script src="../js/config.js"></script>
+<script src="../js/datastore.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
 window.addEventListener("DOMContentLoaded", async () => {
@@ -62,23 +63,23 @@ async function loadInventory() {
 
       const rtMap = {};
       realtime.forEach(item => {
-        if (!rtMap[item.commodityCode]) rtMap[item.commodityCode]={ name:item.name, count:0 };
+        if (!rtMap[item.commodityCode]) rtMap[item.commodityCode] = { name: item.name, count: 0 };
         rtMap[item.commodityCode].count++;
       });
       const slMap = {};
-      sellable.forEach(item => { slMap[item.commodityCode]=item.quantity; });
+      sellable.forEach(item => { slMap[item.commodityCode] = item.quantity; });
       const ordMap = {};
-      orders.filter(o=>o.code===code && o.finish==="").forEach(o => {
-        ordMap[o.commodityCode]=(ordMap[o.commodityCode]||0)+1;
+      orders.filter(o => o.code === code && o.finish === "").forEach(o => {
+        ordMap[o.commodityCode] = (ordMap[o.commodityCode] || 0) + 1;
       });
 
-      const allCodes = new Set([...Object.keys(rtMap),...Object.keys(slMap)]);
+      const allCodes = new Set([...Object.keys(rtMap), ...Object.keys(slMap)]);
       allCodes.forEach(cc => {
-        const name = rtMap[cc]?.name || sellable.find(s=>s.commodityCode===cc)?.commodityName || cc;
-        const rt   = rtMap[cc]?.count ?? "—";
-        const sl   = slMap[cc] ?? 0;
-        const ord  = ordMap[cc] || 0;
-        const badge = sl>=1
+        const name  = rtMap[cc]?.name || sellable.find(s => s.commodityCode === cc)?.commodityName || cc;
+        const rt    = rtMap[cc]?.count ?? "—";
+        const sl    = slMap[cc] ?? 0;
+        const ord   = ordMap[cc] || 0;
+        const badge = sl >= 1
           ? `<span class="badge badge-green">有貨</span>`
           : `<span class="badge badge-red">缺貨</span>`;
 
@@ -109,7 +110,7 @@ async function loadInventory() {
               <th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th>
             </tr>
           </thead>
-          <tbody>${rows.join("")||"<tr><td colspan='9' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+          <tbody>${rows.join("") || "<tr><td colspan='9' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
         </table>
       </div>`;
   } catch(e) {
