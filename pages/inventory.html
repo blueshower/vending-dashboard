@@ -54,20 +54,6 @@ async function loadInventory() {
     const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future:1 });
     const orders = orderRes.order || [];
 
-    // ── DEBUG：開發者工具 Console 可看原始回應 ──
-    console.group("📋 OrderList API 回應");
-    console.log("原始 orderRes：", orderRes);
-    console.log("orders 筆數：", orders.length);
-    if (orders.length > 0) {
-      console.log("第一筆範例：", orders[0]);
-      console.log("所有 finish 值：", [...new Set(orders.map(o => JSON.stringify(o.finish)))]);
-      console.log("finish=='' 的筆數：", orders.filter(o => o.finish === "").length);
-      console.log("finish 為空值(null/undefined/'')：", orders.filter(o => !o.finish).length);
-    } else {
-      console.warn("⚠️ orders 為空陣列，請確認 API 參數或該帳號是否有預訂資料");
-    }
-    console.groupEnd();
-
     const rows = [];
     let idx = 1;
     codeList.forEach(code => {
@@ -81,24 +67,11 @@ async function loadInventory() {
       });
       const slMap = {};
       sellable.forEach(item => { slMap[item.commodityCode] = item.quantity; });
+      const devName4Order = nameMap[code] || "";
       const ordMap = {};
-      orders.filter(o => o.code === code && o.finish === "").forEach(o => {
+      orders.filter(o => o.finish === "False" && o.name === devName4Order).forEach(o => {
         ordMap[o.commodityCode] = (ordMap[o.commodityCode] || 0) + 1;
       });
-
-      // ── DEBUG：各設備的預訂明細 ──
-      const devOrders = orders.filter(o => o.code === code);
-      if (devOrders.length > 0) {
-        console.group(`🖥️ 設備 ${code} 預訂明細（共 ${devOrders.length} 筆）`);
-        console.table(devOrders.map(o => ({
-          commodityCode: o.commodityCode,
-          commodityName: o.commodityName,
-          finish: o.finish,
-          "finish===''": o.finish === "",
-          "!finish": !o.finish,
-        })));
-        console.groupEnd();
-      }
 
       const allCodes = new Set([...Object.keys(rtMap), ...Object.keys(slMap)]);
       allCodes.forEach(cc => {
