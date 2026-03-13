@@ -48,7 +48,9 @@ async function loadAll() {
     const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future: 1 });
     G.orders = orderRes.order || [];
     const salesRes = await callAPI("/Sales.aspx", { begin, company, end });
-    G.sales = salesRes.sales || [];
+    const allSales = salesRes.sales || [];
+    const hasFilter = Array.isArray(G.devices) && G.devices.length > 0;
+    G.sales = hasFilter ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
 
     renderDashboard();
   } catch(e) {
