@@ -9,7 +9,8 @@ function renderLayout(pageTitle, activePage) {
     { id: "dashboard",    label: "📊 Dashboard",      href: "dashboard.html"  },
     { id: "device",       label: "🖥️ 設備狀態",        href: "device.html"     },
     { id: "inventory",    label: "📦 庫存預訂",         href: "inventory.html"  },
-    { id: "transaction",  label: "💳 交易明細",         href: "transaction.html"},
+    { id: "transaction",  label: "💳 本月交易",  href: "transaction_month.html"},
+    { id: "transaction_today", label: "📌 今日交易",  href: "transaction_today.html"},
   ];
 
   const navHTML = nav.map((n) => `
@@ -83,6 +84,29 @@ function showLoading(b) {
   if (el) el.classList.toggle("hidden", !b);
 }
 
+// ── JSONP 呼叫 GAS ──
+function callGAS(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = "gas_cb_" + Date.now();
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      document.getElementById("_gas_script_")?.remove();
+      reject(new Error("請求逾時"));
+    }, 15000);
+    window[cbName] = (data) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      document.getElementById("_gas_script_")?.remove();
+      resolve(data);
+    };
+    const s = document.createElement("script");
+    s.id = "_gas_script_";
+    s.src = url + "&callback=" + cbName;
+    s.onerror = () => { clearTimeout(timeout); reject(new Error("連線失敗")); };
+    document.body.appendChild(s);
+  });
+}
+
 // ── 登出 ──
 function doLogout() {
   if (confirm("確定要登出？")) {
@@ -113,8 +137,7 @@ async function submitChangePass() {
   const session = getSession();
   try {
     const url = `${CONFIG.GAS_URL}?action=changePass&company=${session.company}&user=${session.user}&oldPass=${encodeURIComponent(oldP)}&newPass=${encodeURIComponent(newP)}`;
-    const res  = await fetch(url);
-    const data = await res.json();
+    const data = await callGAS(url);
     if (data.success) {
       alert("密碼修改成功，請重新登入");
       clearSession();
