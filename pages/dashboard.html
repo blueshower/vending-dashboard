@@ -2,128 +2,29 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Dashboard — 智慧管理系統</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <style>
-    /* ══ 1. 通用基礎設定 ══ */
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; width: 100%; font-family: sans-serif; }
-    
-    .page-body {
-      display: flex;
-      flex-direction: column;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    /* ══ 2. 橫式畫面 (Landscape) - 固定比例佈局 ══ */
-    @media (orientation: landscape) {
-      html, body { height: 100%; overflow: hidden; }
-      .page-body { height: calc(100vh - 56px); overflow: hidden; }
-
-      #row-cards { height: 20%; padding: 10px 14px 5px; }
-      #row-mid   { height: 40%; padding: 5px 14px; }
-      #row-bot   { height: 40%; padding: 5px 14px 10px; }
-
-      #row-cards, #row-mid, #row-bot {
-        display: grid;
-        gap: 10px;
-        flex-shrink: 0;
-      }
-      #row-cards { grid-template-columns: repeat(4, 1fr); }
-      #row-mid, #row-bot { grid-template-columns: repeat(3, 1fr); }
-
-      .db-card canvas { height: 100% !important; }
-    }
-
-    /* ══ 3. 直式畫面 (Portrait) - 順滑捲動佈局 ══ */
-    @media (orientation: portrait) {
-      html, body { height: auto; overflow-y: auto; }
-      .page-body { height: auto; padding-bottom: 30px; }
-
-      #row-cards {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        padding: 10px;
-      }
-      #row-mid, #row-bot {
-        display: flex;
-        flex-direction: column;
-        padding: 0 10px;
-      }
-      .db-card {
-        margin-bottom: 12px;
-        min-height: 250px; /* 直式模式下給予固定保底高度 */
-      }
-    }
-
-    /* ══ 4. 組件細節樣式 ══ */
-    .db-card {
-      background: var(--card, #fff);
-      border: 1px solid var(--border, #eee);
-      border-radius: 10px;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      min-height: 0; /* 防止 Flex 項目溢出 */
-      position: relative;
-    }
-    .db-card h3 {
-      font-size: 11px;
-      margin: 0 0 6px;
-      color: var(--muted, #666);
-      flex-shrink: 0;
-    }
-    .canvas-wrap { flex: 1; min-height: 0; position: relative; width: 100%; }
-    
-    /* 統計卡片樣式 */
-    .stat-card {
-      background: var(--card, #fff);
-      border: 1px solid var(--border, #eee);
-      border-radius: 10px;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      cursor: pointer;
-    }
-    .stat-card .label { font-size: 11px; color: #888; }
-    .stat-card .value { font-size: 20px; font-weight: bold; margin: 2px 0; }
-    .stat-card .sub-label { font-size: 10px; opacity: 0.8; }
-
-    /* 熱力圖優化 */
-    .heat-wrap { flex: 1; overflow: auto; min-height: 0; }
-    .heatmap-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .heatmap-table th { font-size: 8px; font-weight: normal; }
-    .heatmap-table td { height: 12px; font-size: 7px; text-align: center; border-radius: 2px; }
-
-    /* 設備銷售圖專用的橫向捲動 */
-    .x-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; min-height: 0; }
-  </style>
 </head>
 <body>
-
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
-
 <script>
-/** ── Chart.js 全域預設：解除長寬比限制 ── **/
-Chart.defaults.maintainAspectRatio = false;
-Chart.defaults.responsive = true;
-Chart.defaults.font.size = 10;
-
 let G = { devices:[], stateMap:{}, inventoryMap:{}, orders:[], sales:[] };
 let charts = {};
 
 window.addEventListener("DOMContentLoaded", async () => {
-  renderLayout("管理總覽", "dashboard");
+  renderLayout("Dashboard", "dashboard");
   document.getElementById("page-body").innerHTML = buildSkeleton();
   await loadAll();
 });
+
+function getAuthorizedDevices(allCodes) {
+  const allowed = getSession().devices;
+  if (!allowed || allowed.length === 0) return allCodes;
+  return allCodes.filter(c => allowed.includes(c));
+}
 
 async function loadAll() {
   showLoading(true);
@@ -132,134 +33,207 @@ async function loadAll() {
     const begin = getMonthStart(), end = getToday();
 
     const stateRes = await callAPI("/MachineState.aspx", { company });
-    G.devices = stateRes.machine.map(m => m.code);
+    const allCodes = stateRes.machine.map(m => m.code);
+    G.devices = getAuthorizedDevices(allCodes);
     stateRes.machine.forEach(m => G.stateMap[m.code] = m);
 
-    // 併行讀取庫存與訂單
-    const [salesRes] = await Promise.all([
-      callAPI("/Sales.aspx", { begin, company, end })
-    ]);
-    
-    G.sales = salesRes.sales || [];
+    await Promise.all(G.devices.map(async code => {
+      try {
+        const r = await callAPI("/OrderMachineCommodity.aspx", { code, company });
+        if (!G.inventoryMap[code]) G.inventoryMap[code] = {};
+        G.inventoryMap[code].sellable = r.commodity || [];
+      } catch { G.inventoryMap[code] = { sellable: [] }; }
+    }));
+
+    const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future: 1 });
+    G.orders = orderRes.order || [];
+    const salesRes = await callAPI("/Sales.aspx", { begin, company, end });
+    const allSales = salesRes.sales || [];
+    const hasFilter = Array.isArray(G.devices) && G.devices.length > 0;
+    G.sales = hasFilter ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
+
     renderDashboard();
   } catch(e) {
-    console.error(e);
+    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px;">資料載入失敗：${e.message}</p>`;
   } finally { showLoading(false); }
 }
 
 function buildSkeleton() {
-  return `
-    <div id="row-cards">
-      ${["設備狀態","庫存狀態","本月交易","今日交易"].map(l=>
-        `<div class="stat-card"><div class="label">${l}</div><div class="value">...</div></div>`
-      ).join("")}
-    </div>
-    <div id="row-mid">
-      <div class="db-card"><h3>設備連線狀態</h3><div class="canvas-wrap"><canvas id="chart-conn"></canvas></div></div>
-      <div class="db-card"><h3>設備銷售分析</h3><div class="x-scroll"><canvas id="chart-device-sales"></canvas></div></div>
-      <div class="db-card"><h3>每日交易趨勢</h3><div class="canvas-wrap"><canvas id="chart-trend"></canvas></div></div>
-    </div>
-    <div id="row-bot">
-      <div class="db-card"><h3>庫存健康度</h3><div class="canvas-wrap"><canvas id="chart-inv"></canvas></div></div>
-      <div class="db-card"><h3>商品銷售排行</h3><div class="canvas-wrap"><canvas id="chart-rank"></canvas></div></div>
-      <div class="db-card"><h3>銷售熱力圖</h3><div class="heat-wrap" id="heatmap-wrap"></div></div>
-    </div>`;
+  return `<div class="stats-grid" id="stats-grid">${
+    ["設備狀態","庫存狀態","本月交易","今日交易"].map(l=>
+      `<div class="stat-card"><div class="label">${l}</div><div class="value">…</div></div>`
+    ).join("")
+  }</div><div class="charts-grid" id="charts-grid"></div>`;
 }
 
 function renderDashboard() {
+  const now = new Date(), today = getToday();
+  let online=0, offline=0;
+  G.devices.forEach(code => {
+    const m = G.stateMap[code];
+    (!m || (now - new Date(m.uploadTime))/60000 > 5) ? offline++ : online++;
+  });
+
+  let invFull=0, invNormal=0, invLow=0, invShort=0;
+  G.devices.forEach(code => {
+    const inv = G.inventoryMap[code]?.sellable || [];
+    const total = inv.length;
+    if (!total) { invShort++; return; }
+    const pct = inv.filter(i => i.quantity >= 1).length / total;
+    if (pct >= 0.8) invFull++;
+    else if (pct >= 0.5) invNormal++;
+    else if (pct >= 0.25) invLow++;
+    else invShort++;
+  });
+
   const monthSales = G.sales.filter(s => s.state === 1);
-  const today = getToday();
+  const monthAmt = monthSales.reduce((a,s) => a+(s.price||0), 0);
   const todaySales = monthSales.filter(s => s.time?.startsWith(today));
+  const todayAmt = todaySales.reduce((a,s) => a+(s.price||0), 0);
 
-  // 更新卡片數字
-  const cards = document.getElementById("row-cards").children;
-  cards[0].querySelector('.value').innerText = G.devices.length;
-  cards[1].querySelector('.value').innerText = G.devices.length;
-  cards[2].querySelector('.value').innerText = monthSales.length;
-  cards[3].querySelector('.value').innerText = todaySales.length;
+  document.getElementById("stats-grid").innerHTML = `
+    <div class="stat-card" onclick="location.href='device.html'">
+      <div class="icon">🖥️</div>
+      <div class="label">設備狀態</div>
+      <div class="value">${G.devices.length}</div>
+      <div class="sub-label">連線 ${online} ／ 離線 ${offline}</div>
+    </div>
+    <div class="stat-card" onclick="location.href='inventory.html'">
+      <div class="icon">📦</div>
+      <div class="label">庫存狀態</div>
+      <div class="value">${G.devices.length}</div>
+      <div class="sub-label">充足${invFull} 正常${invNormal} 稍低${invLow} 不足${invShort}</div>
+    </div>
+    <div class="stat-card" onclick="location.href='transaction.html?range=month'">
+      <div class="icon">💳</div>
+      <div class="label">本月交易</div>
+      <div class="value">${monthSales.length}</div>
+      <div class="sub-label">NT$ ${monthAmt.toLocaleString()}</div>
+    </div>
+    <div class="stat-card" onclick="location.href='transaction.html?range=today'">
+      <div class="icon">📅</div>
+      <div class="label">今日交易</div>
+      <div class="value">${todaySales.length}</div>
+      <div class="sub-label">NT$ ${todayAmt.toLocaleString()}</div>
+    </div>`;
 
-  drawConnectionPie();
-  drawInventoryPie();
+  document.getElementById("charts-grid").innerHTML = `
+    <div class="chart-col">
+      <div class="chart-card"><h3>連線狀態</h3><canvas id="chart-conn" height="160"></canvas></div>
+      <div class="chart-card"><h3>庫存狀態</h3><canvas id="chart-inv" height="160"></canvas></div>
+    </div>
+    <div class="chart-col">
+      <div class="chart-card"><h3>各設備商品販售統計</h3><div style="overflow-x:auto"><canvas id="chart-device-sales" height="220"></canvas></div></div>
+      <div class="chart-card"><h3>商品銷售排名</h3><canvas id="chart-rank" height="200"></canvas></div>
+    </div>
+    <div class="chart-col">
+      <div class="chart-card"><h3>每日交易趨勢</h3><canvas id="chart-trend" height="180"></canvas></div>
+      <div class="chart-card"><h3>銷售熱力圖（週×時段）</h3><div class="heatmap-wrap" id="heatmap-wrap"></div></div>
+    </div>`;
+
+  drawConnectionPie(online, offline);
+  drawInventoryPie(invFull, invNormal, invLow, invShort);
   drawDeviceSales(monthSales);
   drawRankBar(monthSales);
   drawTrend(monthSales);
   drawHeatmap(monthSales);
 }
 
-// --- 以下為圖表繪製函數 (確保 maintainAspectRatio 關閉) ---
-
-function drawConnectionPie() {
+function drawConnectionPie(on, off) {
   charts.conn?.destroy();
   charts.conn = new Chart(document.getElementById("chart-conn"), {
-    type: 'doughnut',
-    data: { labels: ['連線', '離線'], datasets: [{ data: [8, 2], backgroundColor: ['#16a34a', '#dc2626'] }] },
-    options: { plugins: { legend: { position: 'right' } } }
+    type:"doughnut",
+    data:{ labels:["連線","離線"], datasets:[{ data:[on,off], backgroundColor:["#16a34a","#dc2626"] }] },
+    options:{ plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
   });
 }
 
-function drawInventoryPie() {
+function drawInventoryPie(f,n,l,s) {
   charts.inv?.destroy();
   charts.inv = new Chart(document.getElementById("chart-inv"), {
-    type: 'doughnut',
-    data: { labels: ['充足', '缺貨'], datasets: [{ data: [7, 3], backgroundColor: ['#2563eb', '#d97706'] }] },
-    options: { plugins: { legend: { position: 'right' } } }
+    type:"doughnut",
+    data:{ labels:["充足","正常","稍低","不足"], datasets:[{ data:[f,n,l,s], backgroundColor:["#16a34a","#2563eb","#d97706","#dc2626"] }] },
+    options:{ plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
   });
 }
 
 function drawDeviceSales(sales) {
-  const dsCanvas = document.getElementById("chart-device-sales");
-  const dsWrap = dsCanvas.parentElement;
-  // 橫向捲動處理：如果是手機直式，不強制加寬；橫式則根據設備量加寬
-  const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-  dsCanvas.style.width = isLandscape ? "100%" : "600px";
-
+  const map={}, productSet=new Set();
+  sales.forEach(s => {
+    const dev=s.name||s.code, prod=s.commodityName;
+    if(!map[dev]) map[dev]={};
+    map[dev][prod]=(map[dev][prod]||0)+1;
+    productSet.add(prod);
+  });
+  const devices=Object.keys(map), products=[...productSet];
+  const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
   charts.deviceSales?.destroy();
-  charts.deviceSales = new Chart(dsCanvas, {
-    type: 'bar',
-    data: { 
-      labels: ['A設備', 'B設備', 'C設備', 'D設備'], 
-      datasets: [{ label: '銷售額', data: [12, 19, 3, 5], backgroundColor: '#3b82f6' }] 
-    },
-    options: { scales: { y: { beginAtZero: true } } }
+  charts.deviceSales = new Chart(document.getElementById("chart-device-sales"), {
+    type:"bar",
+    data:{ labels:devices, datasets:products.map((p,i)=>({
+      label:p, data:devices.map(d=>map[d][p]||0), backgroundColor:colors[i%colors.length]
+    })) },
+    options:{ plugins:{ legend:{ display:false } }, scales:{ x:{stacked:true}, y:{stacked:true,beginAtZero:true} } }
   });
 }
 
 function drawRankBar(sales) {
+  const map={};
+  sales.forEach(s=>{ map[s.commodityName]=(map[s.commodityName]||0)+1; });
+  const sorted=Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10);
   charts.rank?.destroy();
   charts.rank = new Chart(document.getElementById("chart-rank"), {
-    type: 'bar',
-    data: { 
-      labels: ['商品1', '商品2', '商品3'], 
-      datasets: [{ data: [100, 80, 60], backgroundColor: '#8b5cf6' }] 
-    },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } } }
+    type:"bar",
+    data:{ labels:sorted.map(x=>x[0]), datasets:[{ label:"銷售數量", data:sorted.map(x=>x[1]), backgroundColor:"#2563eb" }] },
+    options:{ indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
   });
 }
 
 function drawTrend(sales) {
+  const dayMap={}, amtMap={};
+  sales.forEach(s => {
+    const d=s.time?.slice(0,10); if(!d) return;
+    dayMap[d]=(dayMap[d]||0)+1;
+    amtMap[d]=(amtMap[d]||0)+(s.price||0);
+  });
+  const days=Object.keys(dayMap).sort();
   charts.trend?.destroy();
   charts.trend = new Chart(document.getElementById("chart-trend"), {
-    type: 'line',
-    data: { 
-      labels: ['03/01', '03/02', '03/03'], 
-      datasets: [{ label: '金額', data: [100, 200, 150], borderColor: '#10b981', tension: 0.4 }] 
-    }
+    type:"line",
+    data:{ labels:days.map(d=>d.slice(5)), datasets:[
+      { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", tension:0.4, yAxisID:"y1" },
+      { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", tension:0.4, yAxisID:"y2" }
+    ] },
+    options:{ plugins:{ legend:{ position:"bottom" } }, scales:{
+      y1:{ position:"left", beginAtZero:true },
+      y2:{ position:"right", beginAtZero:true, grid:{ drawOnChartArea:false } }
+    } }
   });
 }
 
 function drawHeatmap(sales) {
-  const wrap = document.getElementById("heatmap-wrap");
-  let html = `<table class="heatmap-table"><tr><th></th>${Array.from({length:24},(_,i)=>`<th>${i}</th>`).join("")}</tr>`;
-  ["一","二","三","四","五","六","日"].forEach(day => {
-    html += `<tr><th>${day}</th>${Array.from({length:24},()=>`<td style="background:rgba(37,99,235,${Math.random()})"></td>`).join("")}</tr>`;
+  const days=["一","二","三","四","五","六","日"], hours=Array.from({length:24},(_,i)=>i);
+  const grid=Array.from({length:7},()=>Array(24).fill(0));
+  sales.forEach(s => {
+    if(!s.time) return;
+    const d=new Date(s.time.replace(" ","T"));
+    grid[(d.getDay()+6)%7][d.getHours()]++;
   });
-  wrap.innerHTML = html + "</table>";
-}
+  const max=Math.max(...grid.flat(),1);
+  const getColor=v=>`rgba(37,99,235,${(v/max*0.85+0.05).toFixed(2)})`;
 
-// 監聽轉向事件，自動調整圖表大小
-window.addEventListener("resize", () => {
-  Object.values(charts).forEach(chart => chart.resize());
-});
+  let html=`<table class="heatmap-table"><tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
+  days.forEach((day,di) => {
+    html+=`<tr><th>週${day}</th>`;
+    hours.forEach(h => {
+      const v=grid[di][h];
+      html+=`<td style="background:${getColor(v)};color:${v>max*0.5?"#fff":"transparent"}" title="週${day} ${h}時：${v}筆">${v||""}</td>`;
+    });
+    html+="</tr>";
+  });
+  html+="</table>";
+  document.getElementById("heatmap-wrap").innerHTML=html;
+}
 </script>
 </body>
 </html>
