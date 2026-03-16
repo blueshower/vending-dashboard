@@ -28,6 +28,7 @@ function renderLayout(pageTitle, activePage) {
     <!-- 側欄 -->
     <aside class="sidebar">
       <div class="sidebar-logo">🏪 <span>販賣機</span>數據平台</div>
+      <div class="sidebar-hint">(可縮放或旋轉視窗取得最佳瀏覽體驗)</div>
       <nav>${navHTML}</nav>
       <div class="sidebar-footer">
         公司：${session.company}<br/>
