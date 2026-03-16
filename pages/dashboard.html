@@ -5,6 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    /* 統一所有圖表容器高度 */
+    .chart-canvas-wrap {
+      position: relative;
+      height: 200px;
+      width: 100%;
+    }
+    .chart-canvas-wrap canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    /* 熱力圖容器捲動 */
+    .chart-canvas-wrap.heatmap-wrap {
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+  </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -119,16 +138,16 @@ function renderDashboard() {
 
   document.getElementById("charts-grid").innerHTML = `
     <div class="chart-col">
-      <div class="chart-card"><h3>連線狀態</h3><canvas id="chart-conn" height="160"></canvas></div>
-      <div class="chart-card"><h3>庫存狀態</h3><canvas id="chart-inv" height="160"></canvas></div>
+      <div class="chart-card"><h3>連線狀態</h3><div class="chart-canvas-wrap"><canvas id="chart-conn"></canvas></div></div>
+      <div class="chart-card"><h3>庫存狀態</h3><div class="chart-canvas-wrap"><canvas id="chart-inv"></canvas></div></div>
     </div>
     <div class="chart-col">
-      <div class="chart-card"><h3>各設備商品販售統計</h3><div style="overflow-x:auto"><canvas id="chart-device-sales" height="220"></canvas></div></div>
-      <div class="chart-card"><h3>商品銷售排名</h3><canvas id="chart-rank" height="200"></canvas></div>
+      <div class="chart-card"><h3>各設備商品販售統計</h3><div class="chart-canvas-wrap" style="overflow-x:auto"><canvas id="chart-device-sales"></canvas></div></div>
+      <div class="chart-card"><h3>商品銷售排名</h3><div class="chart-canvas-wrap"><canvas id="chart-rank"></canvas></div></div>
     </div>
     <div class="chart-col">
-      <div class="chart-card"><h3>每日交易趨勢</h3><canvas id="chart-trend" height="180"></canvas></div>
-      <div class="chart-card"><h3>銷售熱力圖（週×時段）</h3><div class="heatmap-wrap" id="heatmap-wrap"></div></div>
+      <div class="chart-card"><h3>每日交易趨勢</h3><div class="chart-canvas-wrap"><canvas id="chart-trend"></canvas></div></div>
+      <div class="chart-card"><h3>銷售熱力圖（週×時段）</h3><div class="chart-canvas-wrap heatmap-wrap" id="heatmap-wrap"></div></div>
     </div>`;
 
   drawConnectionPie(online, offline);
@@ -144,7 +163,7 @@ function drawConnectionPie(on, off) {
   charts.conn = new Chart(document.getElementById("chart-conn"), {
     type:"doughnut",
     data:{ labels:["連線","離線"], datasets:[{ data:[on,off], backgroundColor:["#16a34a","#dc2626"] }] },
-    options:{ plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
+    options:{ maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
   });
 }
 
@@ -153,7 +172,7 @@ function drawInventoryPie(f,n,l,s) {
   charts.inv = new Chart(document.getElementById("chart-inv"), {
     type:"doughnut",
     data:{ labels:["充足","正常","稍低","不足"], datasets:[{ data:[f,n,l,s], backgroundColor:["#16a34a","#2563eb","#d97706","#dc2626"] }] },
-    options:{ plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
+    options:{ maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
   });
 }
 
@@ -173,7 +192,7 @@ function drawDeviceSales(sales) {
     data:{ labels:devices, datasets:products.map((p,i)=>({
       label:p, data:devices.map(d=>map[d][p]||0), backgroundColor:colors[i%colors.length]
     })) },
-    options:{ plugins:{ legend:{ display:false } }, scales:{ x:{stacked:true}, y:{stacked:true,beginAtZero:true} } }
+    options:{ maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{stacked:true}, y:{stacked:true,beginAtZero:true} } }
   });
 }
 
@@ -185,7 +204,7 @@ function drawRankBar(sales) {
   charts.rank = new Chart(document.getElementById("chart-rank"), {
     type:"bar",
     data:{ labels:sorted.map(x=>x[0]), datasets:[{ label:"銷售數量", data:sorted.map(x=>x[1]), backgroundColor:"#2563eb" }] },
-    options:{ indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
+    options:{ maintainAspectRatio:false, indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
   });
 }
 
@@ -204,7 +223,7 @@ function drawTrend(sales) {
       { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", tension:0.4, yAxisID:"y1" },
       { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", tension:0.4, yAxisID:"y2" }
     ] },
-    options:{ plugins:{ legend:{ position:"bottom" } }, scales:{
+    options:{ maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, scales:{
       y1:{ position:"left", beginAtZero:true },
       y2:{ position:"right", beginAtZero:true, grid:{ drawOnChartArea:false } }
     } }
