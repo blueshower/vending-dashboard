@@ -54,7 +54,7 @@ function renderLayout(pageTitle, activePage) {
   <!-- 修改密碼 Modal -->
   <div class="modal-overlay hidden" id="modal-pass">
     <div class="modal-box">
-      <h2>🔑 修改密碼</h2>
+      <h2>🔑 修改密碼 (功能開發中)</h2>
       <div class="form-group">
         <label>舊密碼</label>
         <input id="old-pass" type="password" placeholder="請輸入舊密碼" />
