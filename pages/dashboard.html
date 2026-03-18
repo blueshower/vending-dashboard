@@ -9,7 +9,7 @@
     /* 統一所有圖表容器高度 */
     .chart-canvas-wrap {
       position: relative;
-      height: 200px;
+      height: 240px;
       width: 100%;
     }
     .chart-canvas-wrap canvas {
@@ -21,7 +21,36 @@
     /* 熱力圖容器捲動 */
     .chart-canvas-wrap.heatmap-wrap {
       overflow-x: auto;
-      overflow-y: hidden;
+      overflow-y: auto;
+    }
+    /* 熱力圖表格樣式：縮小格子讓 7 行塞進容器 */
+    .heatmap-table {
+      border-collapse: collapse;
+      height: 100%;
+      table-layout: fixed;
+    }
+    .heatmap-table th,
+    .heatmap-table td {
+      min-width: 22px;
+      width: 22px;
+      height: 26px;
+      font-size: 10px;
+      text-align: center;
+      padding: 0;
+      white-space: nowrap;
+    }
+    .heatmap-table th {
+      font-weight: 600;
+      background: transparent;
+      color: inherit;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+    /* 列首（週一…）固定在左側 */
+    .heatmap-table tr th:first-child {
+      min-width: 32px;
+      width: 32px;
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -241,7 +270,7 @@ function drawHeatmap(sales) {
   const max=Math.max(...grid.flat(),1);
   const getColor=v=>`rgba(37,99,235,${(v/max*0.85+0.05).toFixed(2)})`;
 
-  let html=`<table class="heatmap-table"><tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
+  let html=`<table class="heatmap-table" style="width:max-content;height:100%"><tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   days.forEach((day,di) => {
     html+=`<tr><th>週${day}</th>`;
     hours.forEach(h => {
