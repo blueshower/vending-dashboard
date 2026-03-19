@@ -101,6 +101,10 @@ async function loadInventory() {
       <div class="table-wrap">
         <div class="table-header">
           <h2>庫存預訂列表（${rows.length} 筆商品）</h2>
+          <div style="display:flex;align-items:center;gap:16px;font-size:13px;color:#64748b">
+            <span><span class="badge badge-green">有貨</span> 可售數量 ≥ 1</span>
+            <span><span class="badge badge-red">缺貨</span> 可售數量 = 0</span>
+          </div>
           <button class="btn-icon" onclick="loadInventory()">🔄 重新整理</button>
         </div>
         <table>
