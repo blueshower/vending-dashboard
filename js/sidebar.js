@@ -28,7 +28,6 @@ function renderLayout(pageTitle, activePage) {
     <!-- 側欄 -->
     <aside class="sidebar">
       <div class="sidebar-logo">🏪 <span>販賣機</span>數據平台</div>
-      <div class="sidebar-hint">(縮放或旋轉視窗取得最佳瀏覽體驗)</div>
       <nav>${navHTML}</nav>
       <div class="sidebar-footer">
         公司：${session.company}<br/>
@@ -54,7 +53,7 @@ function renderLayout(pageTitle, activePage) {
   <!-- 修改密碼 Modal -->
   <div class="modal-overlay hidden" id="modal-pass">
     <div class="modal-box">
-      <h2>🔑 修改密碼 (功能開發中)</h2>
+      <h2>🔑 修改密碼</h2>
       <div class="form-group">
         <label>舊密碼</label>
         <input id="old-pass" type="password" placeholder="請輸入舊密碼" />
@@ -130,14 +129,19 @@ async function submitChangePass() {
   const newP = document.getElementById("new-pass").value.trim();
   const cfm  = document.getElementById("cfm-pass").value.trim();
   const errEl = document.getElementById("pass-err");
+  const btn   = document.querySelector("#modal-pass .btn-primary");
 
   errEl.textContent = "";
   if (!oldP || !newP || !cfm) { errEl.textContent = "請填寫所有欄位"; return; }
   if (newP !== cfm)            { errEl.textContent = "新密碼與確認不符"; return; }
+  if (newP.length < 4)         { errEl.textContent = "新密碼至少需 4 個字元"; return; }
+
+  btn.disabled = true;
+  btn.textContent = "處理中…";
 
   const session = getSession();
   try {
-    const url = `${CONFIG.GAS_URL}?action=changePass&company=${session.company}&user=${session.user}&oldPass=${encodeURIComponent(oldP)}&newPass=${encodeURIComponent(newP)}`;
+    const url = `${CONFIG.GAS_URL}?action=changePass&company=${encodeURIComponent(session.company)}&user=${encodeURIComponent(session.user)}&oldPass=${encodeURIComponent(oldP)}&newPass=${encodeURIComponent(newP)}`;
     const data = await callGAS(url);
     if (data.success) {
       alert("密碼修改成功，請重新登入");
@@ -147,6 +151,9 @@ async function submitChangePass() {
       errEl.textContent = data.message || "舊密碼錯誤";
     }
   } catch(e) {
-    errEl.textContent = "連線失敗";
+    errEl.textContent = "連線失敗，請稍後再試";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "確認修改";
   }
 }
