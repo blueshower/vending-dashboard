@@ -6,7 +6,6 @@
   <title>Dashboard — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
   <style>
-    /* 統一所有圖表容器高度 */
     .chart-canvas-wrap {
       position: relative;
       height: 240px;
@@ -18,12 +17,10 @@
       width: 100% !important;
       height: 100% !important;
     }
-    /* 熱力圖容器捲動 */
     .chart-canvas-wrap.heatmap-wrap {
       overflow-x: auto;
       overflow-y: auto;
     }
-    /* 熱力圖表格樣式：縮小格子讓 7 行塞進容器 */
     .heatmap-table {
       border-collapse: collapse;
       height: 100%;
@@ -47,10 +44,68 @@
       left: 0;
       z-index: 1;
     }
-    /* 列首（週一…）固定在左側 */
     .heatmap-table tr th:first-child {
       min-width: 32px;
       width: 32px;
+    }
+
+    /* ── 快取狀態列 ── */
+    .cache-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #166534;
+      flex-wrap: wrap;
+    }
+    .cache-bar.stale {
+      background: #fefce8;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+    .cache-bar .cache-time {
+      font-weight: 600;
+    }
+    .cache-bar .btn-refresh {
+      margin-left: auto;
+      background: #16a34a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background .15s;
+    }
+    .cache-bar .btn-refresh:hover { background: #15803d; }
+    .cache-bar.stale .btn-refresh { background: #d97706; }
+    .cache-bar.stale .btn-refresh:hover { background: #b45309; }
+
+    /* 寫入進度提示 */
+    .sync-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .3s, transform .3s;
+      pointer-events: none;
+    }
+    .sync-toast.show {
+      opacity: 1;
+      transform: translateY(0);
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -59,7 +114,7 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
-let G = { devices:[], stateMap:{}, inventoryMap:{}, orders:[], sales:[] };
+let G = { devices:[], stateMap:{}, inventoryMap:{}, orders:[], sales:[], updatedAt: null };
 let charts = {};
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -74,8 +129,10 @@ function getAuthorizedDevices(allCodes) {
   return allCodes.filter(c => allowed.includes(c));
 }
 
+// ── 主要載入（呼叫 API，然後寫回 Sheet）──
 async function loadAll() {
   showLoading(true);
+  showSyncToast("🔄 正在從 API 載入資料…");
   try {
     const { company } = getSession();
     const begin = getMonthStart(), end = getToday();
@@ -85,25 +142,133 @@ async function loadAll() {
     G.devices = getAuthorizedDevices(allCodes);
     stateRes.machine.forEach(m => G.stateMap[m.code] = m);
 
+    // 設備名稱
+    const nameRes = await callAPI("/Machine.aspx", { company });
+    const nameMap = {};
+    (nameRes.machine || []).forEach(m => { nameMap[m.code] = m.name; });
+
     await Promise.all(G.devices.map(async code => {
       try {
-        const r = await callAPI("/OrderMachineCommodity.aspx", { code, company });
-        if (!G.inventoryMap[code]) G.inventoryMap[code] = {};
-        G.inventoryMap[code].sellable = r.commodity || [];
-      } catch { G.inventoryMap[code] = { sellable: [] }; }
+        const [rtRes, slRes] = await Promise.allSettled([
+          callAPI("/MachineCommodity.aspx", { code, company }),
+          callAPI("/OrderMachineCommodity.aspx", { code, company }),
+        ]);
+        G.inventoryMap[code] = {
+          name: nameMap[code] || code,
+          realtime: rtRes.status==="fulfilled" ? (rtRes.value.commodity||[]) : [],
+          sellable:  slRes.status==="fulfilled" ? (slRes.value.commodity||[]) : [],
+        };
+      } catch { G.inventoryMap[code] = { name: nameMap[code]||code, realtime:[], sellable:[] }; }
     }));
 
     const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future: 1 });
     G.orders = orderRes.order || [];
+
     const salesRes = await callAPI("/Sales.aspx", { begin, company, end });
     const allSales = salesRes.sales || [];
     const hasFilter = Array.isArray(G.devices) && G.devices.length > 0;
     G.sales = hasFilter ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
 
+    G.updatedAt = new Date().toISOString();
+
+    // ── 渲染 Dashboard ──
     renderDashboard();
+
+    // ── 非同步寫回 Google Sheet（不阻塞 UI）──
+    syncToSheet();
+
   } catch(e) {
     document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px;">資料載入失敗：${e.message}</p>`;
   } finally { showLoading(false); }
+}
+
+// ── 將所有資料分批寫回 Google Sheet ──
+async function syncToSheet() {
+  showSyncToast("☁️ 正在同步資料到 Google Sheet…");
+  try {
+    const { company } = getSession();
+    const now = new Date();
+
+    // 1. 設備狀態快取
+    const devicesPayload = G.devices.map(code => {
+      const m = G.stateMap[code] || {};
+      const inv = G.inventoryMap[code] || {};
+      const diff = (now - new Date(m.uploadTime)) / 60000;
+      return {
+        code,
+        name: inv.name || "—",
+        online: diff <= 5,
+        uploadTime: m.uploadTime || "",
+        temperature1: m.temperature1 ?? "",
+      };
+    });
+    await writeCacheToSheet("cache_devices", {
+      company, updatedAt: G.updatedAt, devices: devicesPayload
+    });
+
+    // 2. 庫存快取
+    const inventoryPayload = [];
+    G.devices.forEach(code => {
+      const { name, realtime, sellable } = G.inventoryMap[code] || {};
+      const rtMap = {};
+      (realtime||[]).forEach(item => {
+        if (!rtMap[item.commodityCode]) rtMap[item.commodityCode] = { name: item.name, count: 0 };
+        rtMap[item.commodityCode].count++;
+      });
+      const slMap = {};
+      (sellable||[]).forEach(item => { slMap[item.commodityCode] = item.quantity; });
+      const allCodes = new Set([...Object.keys(rtMap), ...Object.keys(slMap)]);
+      allCodes.forEach(cc => {
+        inventoryPayload.push({
+          code,
+          devName: name || "—",
+          commodityCode: cc,
+          commodityName: rtMap[cc]?.name || (sellable||[]).find(s => s.commodityCode===cc)?.commodityName || cc,
+          realtime: rtMap[cc]?.count ?? "",
+          sellable: slMap[cc] ?? 0,
+        });
+      });
+    });
+    // 訂單快取（今日預訂）
+    await writeCacheToSheet("cache_inventory", {
+      company, updatedAt: G.updatedAt,
+      inventory: inventoryPayload,
+      orders: G.orders,
+    });
+
+    // 3. 本月銷售快取
+    await writeCacheToSheet("cache_sales_month", {
+      company, updatedAt: G.updatedAt, sales: G.sales
+    });
+
+    // 4. 今日銷售快取
+    const today = getToday();
+    const todaySales = G.sales.filter(s => s.time?.startsWith(today));
+    await writeCacheToSheet("cache_sales_today", {
+      company, updatedAt: G.updatedAt, sales: todaySales
+    });
+
+    showSyncToast("✅ 資料同步完成！其他頁面可直接讀取快取");
+  } catch(e) {
+    showSyncToast("⚠️ 部分資料同步失敗，請檢查 GAS 設定");
+    console.error("[syncToSheet]", e);
+  }
+}
+
+// ── Toast 提示 ──
+let _toastTimer = null;
+function showSyncToast(msg, duration=3500) {
+  let toast = document.getElementById("sync-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "sync-toast";
+    toast.className = "sync-toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add("show");
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove("show"), duration);
 }
 
 function buildSkeleton() {
@@ -139,6 +304,10 @@ function renderDashboard() {
   const todaySales = monthSales.filter(s => s.time?.startsWith(today));
   const todayAmt = todaySales.reduce((a,s) => a+(s.price||0), 0);
 
+  const updatedLabel = G.updatedAt
+    ? new Date(G.updatedAt).toLocaleString("zh-TW", { hour12:false })
+    : "—";
+
   document.getElementById("stats-grid").innerHTML = `
     <div class="stat-card" onclick="location.href='device.html'">
       <div class="icon">🖥️</div>
@@ -152,13 +321,13 @@ function renderDashboard() {
       <div class="value">${G.devices.length}</div>
       <div class="sub-label">充足${invFull} 正常${invNormal} 稍低${invLow} 不足${invShort}</div>
     </div>
-    <div class="stat-card" onclick="location.href='transaction.html?range=month'">
+    <div class="stat-card" onclick="location.href='transaction_month.html'">
       <div class="icon">💳</div>
       <div class="label">本月交易</div>
       <div class="value">${monthSales.length}</div>
       <div class="sub-label">NT$ ${monthAmt.toLocaleString()}</div>
     </div>
-    <div class="stat-card" onclick="location.href='transaction.html?range=today'">
+    <div class="stat-card" onclick="location.href='transaction_today.html'">
       <div class="icon">📅</div>
       <div class="label">今日交易</div>
       <div class="value">${todaySales.length}</div>
@@ -166,6 +335,13 @@ function renderDashboard() {
     </div>`;
 
   document.getElementById("charts-grid").innerHTML = `
+    <!-- 快取狀態列 -->
+    <div class="cache-bar" id="cache-status-bar" style="grid-column:1/-1">
+      <span>📡 資料來源：即時 API</span>
+      <span class="cache-time">最後更新：${updatedLabel}</span>
+      <button class="btn-refresh" onclick="loadAll()">🔄 重新整理</button>
+    </div>
+
     <div class="chart-col">
       <div class="chart-card"><h3>連線狀態</h3><div class="chart-canvas-wrap"><canvas id="chart-conn"></canvas></div></div>
       <div class="chart-card"><h3>庫存狀態</h3><div class="chart-canvas-wrap"><canvas id="chart-inv"></canvas></div></div>
