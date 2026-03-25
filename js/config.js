@@ -20,7 +20,7 @@ const CONFIG = {
   OFFLINE_MINUTES: 5,
 
   // 快取過期時間（分鐘），超過此時間 dashboard 提示需重整
-  CACHE_TTL_MINUTES: 30,
+  CACHE_TTL_MINUTES: 5,
 };
 
 // --- 工具函式 ---
