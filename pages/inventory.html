@@ -4,6 +4,38 @@
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>庫存預訂 — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .cache-notice {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #166534;
+      flex-wrap: wrap;
+    }
+    .cache-notice.stale {
+      background: #fefce8;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+    .cache-notice .go-dash {
+      margin-left: auto;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .cache-notice .go-dash:hover { background: #1d4ed8; }
+  </style>
 </head>
 <body>
 <script src="../js/config.js"></script>
@@ -11,115 +43,104 @@
 <script>
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("庫存預訂資訊", "inventory");
-  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">載入中…</p>`;
-  await loadInventory();
+  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">讀取快取中…</p>`;
+  await loadFromCache();
 });
 
-async function loadInventory() {
+async function loadFromCache() {
   showLoading(true);
   try {
-    const { company, devices: allowed } = getSession();
-    const begin = getMonthStart(), end = getToday();
+    const cached = await readCacheFromSheet("cache_inventory");
 
-    // 同時呼叫設備狀態 + 設備名稱
-    const [stateRes, nameRes] = await Promise.all([
-      callAPI("/MachineState.aspx", { company }),
-      callAPI("/Machine.aspx", { company }),
-    ]);
-
-    // code → name 對照表
-    const nameMap = {};
-    (nameRes.machine || []).forEach(m => { nameMap[m.code] = m.name; });
-
-    let machines = stateRes.machine || [];
-    if (allowed && allowed.length > 0) {
-      machines = machines.filter(m => allowed.includes(m.code));
+    if (!cached || !cached.data) {
+      showNoCacheMessage();
+      return;
     }
-    const codeList = machines.map(m => m.code);
 
-    // 逐台取即時庫存 + 可售庫存
-    const invData = {};
-    await Promise.all(codeList.map(async code => {
-      const [rtRes, slRes] = await Promise.allSettled([
-        callAPI("/MachineCommodity.aspx", { code, company }),
-        callAPI("/OrderMachineCommodity.aspx", { code, company }),
-      ]);
-      invData[code] = {
-        realtime: rtRes.status==="fulfilled" ? (rtRes.value.commodity||[]) : [],
-        sellable:  slRes.status==="fulfilled" ? (slRes.value.commodity||[]) : [],
-      };
-    }));
+    const { inventory, orders, updatedAt } = cached.data;
+    const isValid = isCacheValid(updatedAt);
+    renderInventory(inventory || [], orders || [], updatedAt, isValid);
 
-    // 預訂資料（只查當天）
-    const orderRes = await callAPI("/OrderList.aspx", { begin: end, company, end, future:1 });
-    const orders = orderRes.order || [];
-
-    const rows = [];
-    let idx = 1;
-    codeList.forEach(code => {
-      const { realtime, sellable } = invData[code];
-      const devName = nameMap[code] || "—";
-
-      const rtMap = {};
-      realtime.forEach(item => {
-        if (!rtMap[item.commodityCode]) rtMap[item.commodityCode] = { name: item.name, count: 0 };
-        rtMap[item.commodityCode].count++;
-      });
-      const slMap = {};
-      sellable.forEach(item => { slMap[item.commodityCode] = item.quantity; });
-      const devName4Order = nameMap[code] || "";
-      const ordMap = {};
-      orders.filter(o => o.finish === "False" && o.name === devName4Order).forEach(o => {
-        ordMap[o.commodityCode] = (ordMap[o.commodityCode] || 0) + 1;
-      });
-
-      const allCodes = new Set([...Object.keys(rtMap), ...Object.keys(slMap)]);
-      allCodes.forEach(cc => {
-        const name  = rtMap[cc]?.name || sellable.find(s => s.commodityCode === cc)?.commodityName || cc;
-        const rt    = rtMap[cc]?.count ?? "—";
-        const sl    = slMap[cc] ?? 0;
-        const ord   = ordMap[cc] || 0;
-        const badge = sl >= 1
-          ? `<span class="badge badge-green">有貨</span>`
-          : `<span class="badge badge-red">缺貨</span>`;
-
-        rows.push(`<tr>
-          <td>${idx++}</td>
-          <td><code style="font-size:11px">${code}</code></td>
-          <td><strong>${devName}</strong></td>
-          <td>${cc}</td>
-          <td>${name}</td>
-          <td>${rt}</td>
-          <td>${sl}</td>
-          <td>${ord}</td>
-          <td>${badge}</td>
-        </tr>`);
-      });
-    });
-
-    document.getElementById("page-body").innerHTML = `
-      <div class="table-wrap">
-        <div class="table-header">
-          <h2>庫存預訂列表（${rows.length} 筆商品）</h2>
-          <div style="display:flex;align-items:center;gap:16px;font-size:13px;color:#64748b">
-            <span><span class="badge badge-green">有貨</span> 可售數量 ≥ 1</span>
-            <span><span class="badge badge-red">缺貨</span> 可售數量 = 0</span>
-          </div>
-          <button class="btn-icon" onclick="loadInventory()">🔄 重新整理</button>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th><th>設備編號</th><th>設備名稱</th><th>商品編號</th>
-              <th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th>
-            </tr>
-          </thead>
-          <tbody>${rows.join("") || "<tr><td colspan='9' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
-        </table>
-      </div>`;
   } catch(e) {
-    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px">載入失敗：${e.message}</p>`;
+    document.getElementById("page-body").innerHTML = `
+      <div style="padding:24px">
+        <p style="color:#dc2626;margin-bottom:12px">讀取快取失敗：${e.message}</p>
+        <button class="btn-icon" onclick="location.href='dashboard.html'">← 返回 Dashboard 重新整理資料</button>
+      </div>`;
   } finally { showLoading(false); }
+}
+
+function showNoCacheMessage() {
+  document.getElementById("page-body").innerHTML = `
+    <div style="padding:24px;text-align:center">
+      <p style="font-size:32px;margin-bottom:8px">📭</p>
+      <p style="color:#64748b;margin-bottom:16px;font-size:14px">
+        尚無快取資料。<br/>請先到 Dashboard 載入一次資料。
+      </p>
+      <button class="btn-icon" onclick="location.href='dashboard.html'"
+        style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px">
+        🏠 前往 Dashboard
+      </button>
+    </div>`;
+}
+
+function renderInventory(inventory, orders, updatedAt, isValid) {
+  const updatedLabel = updatedAt
+    ? new Date(updatedAt).toLocaleString("zh-TW", { hour12:false })
+    : "—";
+
+  // 將訂單資料 map 到設備名稱+商品編號
+  const ordMap = {};
+  orders.forEach(o => {
+    if (o.finish === "False") {
+      const key = `${o.name}__${o.commodityCode}`;
+      ordMap[key] = (ordMap[key] || 0) + 1;
+    }
+  });
+
+  const rows = inventory.map((item, idx) => {
+    const ordKey = `${item.devName}__${item.commodityCode}`;
+    const ord = ordMap[ordKey] || 0;
+    const sl = item.sellable ?? 0;
+    const badge = sl >= 1
+      ? `<span class="badge badge-green">有貨</span>`
+      : `<span class="badge badge-red">缺貨</span>`;
+
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td><code style="font-size:11px">${item.code}</code></td>
+      <td><strong>${item.devName}</strong></td>
+      <td>${item.commodityCode}</td>
+      <td>${item.commodityName}</td>
+      <td>${item.realtime !== "" ? item.realtime : "—"}</td>
+      <td>${sl}</td>
+      <td>${ord}</td>
+      <td>${badge}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("page-body").innerHTML = `
+    <div class="${isValid ? "cache-notice" : "cache-notice stale"}">
+      <span>${isValid ? "✅ 快取有效" : "⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘"}</span>
+      <span style="font-weight:600">最後更新：${updatedLabel}</span>
+      <button class="go-dash" onclick="location.href='dashboard.html'">
+        🔄 前往 Dashboard 重新整理
+      </button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-header">
+        <h2>庫存預訂列表（${inventory.length} 筆商品）</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>設備編號</th><th>設備名稱</th><th>商品編號</th>
+            <th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th>
+          </tr>
+        </thead>
+        <tbody>${rows || "<tr><td colspan='9' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+      </table>
+    </div>`;
 }
 </script>
 </body>
