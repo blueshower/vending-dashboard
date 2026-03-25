@@ -5,6 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>設備狀態 — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .cache-notice {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #166534;
+      flex-wrap: wrap;
+    }
+    .cache-notice.stale {
+      background: #fefce8;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+    .cache-notice.no-cache {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+    .cache-notice .go-dash {
+      margin-left: auto;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .cache-notice .go-dash:hover { background: #1d4ed8; }
+  </style>
 </head>
 <body>
 <script src="../js/config.js"></script>
@@ -12,76 +49,105 @@
 <script>
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("設備狀態資訊", "device");
-  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">載入中…</p>`;
-  await loadDevices();
+  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">讀取快取中…</p>`;
+  await loadFromCache();
 });
 
-async function loadDevices() {
+async function loadFromCache() {
   showLoading(true);
   try {
-    const { company, devices: allowed } = getSession();
-    const now = new Date();
+    const cached = await readCacheFromSheet("cache_devices");
 
-    // 同時呼叫 MachineState + Machine（設備名稱）
-    const [stateRes, nameRes] = await Promise.all([
-      callAPI("/MachineState.aspx", { company }),
-      callAPI("/Machine.aspx", { company }),
-    ]);
-
-    // 建立 code → name 對照表
-    const nameMap = {};
-    (nameRes.machine || []).forEach(m => { nameMap[m.code] = m.name; });
-
-    let machines = stateRes.machine || [];
-    if (allowed && allowed.length > 0) {
-      machines = machines.filter(m => allowed.includes(m.code));
+    if (!cached || !cached.data) {
+      showNoCacheMessage();
+      return;
     }
 
-    const rows = machines.map((m, idx) => {
-      const diff   = (now - new Date(m.uploadTime)) / 60000;
-      const online = diff <= 5;
-      const badge  = online
-        ? `<span class="badge badge-green">連線</span>`
-        : `<span class="badge badge-red">離線</span>`;
-      const syncAgo = Math.floor(diff) + " 分鐘前";
-      const devName = nameMap[m.code] || "—";
+    const { devices, updatedAt, company } = cached.data;
+    const isValid = isCacheValid(updatedAt);
+    renderDevices(devices || [], updatedAt, isValid);
 
-      return `
-        <tr>
-          <td>${idx + 1}</td>
-          <td><code style="font-size:12px">${m.code}</code></td>
-          <td><strong>${devName}</strong></td>
-          <td>${badge}</td>
-          <td>${m.uploadTime || "—"}</td>
-          <td>${online ? "—" : syncAgo}</td>
-          <td>${m.temperature1 != null ? m.temperature1 + "°C" : "—"}</td>
-        </tr>`;
-    }).join("");
-
-    document.getElementById("page-body").innerHTML = `
-      <div class="table-wrap">
-        <div class="table-header">
-          <h2>設備狀態列表（共 ${machines.length} 台）</h2>
-          <button class="btn-icon" onclick="loadDevices()">🔄 重新整理</button>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>設備編號</th>
-              <th>設備名稱</th>
-              <th>連線狀態</th>
-              <th>最後同步時間</th>
-              <th>離線時長</th>
-              <th>溫度1</th>
-            </tr>
-          </thead>
-          <tbody>${rows || "<tr><td colspan='7' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
-        </table>
-      </div>`;
   } catch(e) {
-    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px">載入失敗：${e.message}</p>`;
+    document.getElementById("page-body").innerHTML = `
+      <div style="padding:24px">
+        <p style="color:#dc2626;margin-bottom:12px">讀取快取失敗：${e.message}</p>
+        <button class="btn-icon" onclick="location.href='dashboard.html'">
+          ← 返回 Dashboard 重新整理資料
+        </button>
+      </div>`;
   } finally { showLoading(false); }
+}
+
+function showNoCacheMessage() {
+  document.getElementById("page-body").innerHTML = `
+    <div style="padding:24px;text-align:center">
+      <p style="font-size:32px;margin-bottom:8px">📭</p>
+      <p style="color:#64748b;margin-bottom:16px;font-size:14px">
+        尚無快取資料。<br/>請先到 Dashboard 載入一次資料。
+      </p>
+      <button class="btn-icon" onclick="location.href='dashboard.html'"
+        style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px">
+        🏠 前往 Dashboard
+      </button>
+    </div>`;
+}
+
+function renderDevices(devices, updatedAt, isValid) {
+  const now = new Date();
+  const updatedLabel = updatedAt
+    ? new Date(updatedAt).toLocaleString("zh-TW", { hour12:false })
+    : "—";
+
+  const rows = devices.map((m, idx) => {
+    const badge = m.online
+      ? `<span class="badge badge-green">連線</span>`
+      : `<span class="badge badge-red">離線</span>`;
+
+    let syncAgo = "—";
+    if (!m.online && m.uploadTime) {
+      const diff = Math.floor((now - new Date(m.uploadTime)) / 60000);
+      syncAgo = diff + " 分鐘前";
+    }
+
+    return `
+      <tr>
+        <td>${idx + 1}</td>
+        <td><code style="font-size:12px">${m.code}</code></td>
+        <td><strong>${m.name || "—"}</strong></td>
+        <td>${badge}</td>
+        <td>${m.uploadTime || "—"}</td>
+        <td>${syncAgo}</td>
+        <td>${m.temperature1 !== "" && m.temperature1 != null ? m.temperature1 + "°C" : "—"}</td>
+      </tr>`;
+  }).join("");
+
+  document.getElementById("page-body").innerHTML = `
+    <div class="${isValid ? "cache-notice" : "cache-notice stale"}" id="cache-bar">
+      <span>${isValid ? "✅ 快取有效" : "⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘"}</span>
+      <span style="font-weight:600">最後更新：${updatedLabel}</span>
+      <button class="go-dash" onclick="location.href='dashboard.html'">
+        🔄 前往 Dashboard 重新整理
+      </button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-header">
+        <h2>設備狀態列表（共 ${devices.length} 台）</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>設備編號</th>
+            <th>設備名稱</th>
+            <th>連線狀態</th>
+            <th>最後同步時間</th>
+            <th>離線時長</th>
+            <th>溫度1</th>
+          </tr>
+        </thead>
+        <tbody>${rows || "<tr><td colspan='7' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+      </table>
+    </div>`;
 }
 </script>
 </body>
