@@ -5,6 +5,38 @@
   <title>本月交易明細 — 販賣機管理</title>
   <link rel="stylesheet" href="../css/style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    .cache-notice {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #166534;
+      flex-wrap: wrap;
+    }
+    .cache-notice.stale {
+      background: #fefce8;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+    .cache-notice .go-dash {
+      margin-left: auto;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .cache-notice .go-dash:hover { background: #1d4ed8; }
+  </style>
 </head>
 <body>
 <script src="../js/config.js"></script>
@@ -14,40 +46,55 @@ let charts = {};
 
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("本月交易明細", "transaction");
-  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">載入中…</p>`;
-  await loadTransaction();
+  document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">讀取快取中…</p>`;
+  await loadFromCache();
 });
 
-async function loadTransaction() {
+async function loadFromCache() {
   showLoading(true);
   try {
-    const session = getSession();
-    const { company } = session;
-    // allowed：空陣列或無值 = 看全部；有值 = 只看指定設備
-    const allowed = session.devices;
-    const hasFilter = Array.isArray(allowed) && allowed.length > 0;
+    const cached = await readCacheFromSheet("cache_sales_month");
 
-    const today = getToday();
-    const begin = getMonthStart();
-
-    const salesRes = await callAPI("/Sales.aspx", { begin, company, end: today });
-
-    // Step1：只保留成功交易
-    let sales = (salesRes.sales || []).filter(s => s.state === 1);
-
-    // Step2：依設備權限過濾（有設定才過濾）
-    if (hasFilter) {
-      sales = sales.filter(s => allowed.includes(s.code));
+    if (!cached || !cached.data) {
+      showNoCacheMessage();
+      return;
     }
 
-    renderTransaction(sales);
+    const { sales, updatedAt } = cached.data;
+    const isValid = isCacheValid(updatedAt);
+    // 只保留成功交易
+    const successSales = (sales || []).filter(s => s.state === 1);
+    renderTransaction(successSales, updatedAt, isValid);
+
   } catch(e) {
-    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px">載入失敗：${e.message}</p>`;
+    document.getElementById("page-body").innerHTML = `
+      <div style="padding:24px">
+        <p style="color:#dc2626;margin-bottom:12px">讀取快取失敗：${e.message}</p>
+        <button class="btn-icon" onclick="location.href='dashboard.html'">← 返回 Dashboard 重新整理資料</button>
+      </div>`;
   } finally { showLoading(false); }
 }
 
-function renderTransaction(sales) {
+function showNoCacheMessage() {
+  document.getElementById("page-body").innerHTML = `
+    <div style="padding:24px;text-align:center">
+      <p style="font-size:32px;margin-bottom:8px">📭</p>
+      <p style="color:#64748b;margin-bottom:16px;font-size:14px">
+        尚無快取資料。<br/>請先到 Dashboard 載入一次資料。
+      </p>
+      <button onclick="location.href='dashboard.html'"
+        style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px">
+        🏠 前往 Dashboard
+      </button>
+    </div>`;
+}
+
+function renderTransaction(sales, updatedAt, isValid) {
+  const updatedLabel = updatedAt
+    ? new Date(updatedAt).toLocaleString("zh-TW", { hour12:false })
+    : "—";
   const totalAmt = sales.reduce((a, s) => a + (s.price || 0), 0);
+
   const rows = sales.map((s, i) => `
     <tr>
       <td>${i+1}</td>
@@ -61,6 +108,13 @@ function renderTransaction(sales) {
     </tr>`).join("");
 
   document.getElementById("page-body").innerHTML = `
+    <div class="${isValid ? "cache-notice" : "cache-notice stale"}">
+      <span>${isValid ? "✅ 快取有效" : "⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘"}</span>
+      <span style="font-weight:600">最後更新：${updatedLabel}</span>
+      <button class="go-dash" onclick="location.href='dashboard.html'">
+        🔄 前往 Dashboard 重新整理
+      </button>
+    </div>
     <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <span style="background:#dbeafe;color:#1e40af;padding:4px 14px;border-radius:99px;font-size:12px;font-weight:700">📅 本月</span>
       <button class="btn-icon" onclick="location.href='transaction_today.html'">📌 切換今日</button>
