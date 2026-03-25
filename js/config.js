@@ -7,7 +7,7 @@ const CONFIG = {
   SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
   // ★ Google Apps Script 部署網址（登入 / 修改密碼 / 快取讀寫）
-  GAS_URL: "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec",
+  GAS_URL: "https://script.google.com/macros/s/AKfycbw9C2v6SrN3za7DAHnowQVpPrNMSnqb-R23crJ3ivLapxAQpDLJcFalvyXkKH4e2zEi/exec",
 
   // ★ 代理伺服器設定
   PROXY_CF: "https://vending-proxy.blueshower-tw.workers.dev",
