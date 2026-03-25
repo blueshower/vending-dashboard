@@ -114,71 +114,44 @@ function getCacheKey() {
 }
 
 /**
- * 寫入快取到 Google Sheet（透過 GAS POST）
- * sheetName: "cache_devices" | "cache_inventory" | "cache_sales_month" | "cache_sales_today"
- * payload: JSON 物件
+ * 寫入快取到 localStorage
+ * @param {string} sheetName 快取名稱 (cache_devices / cache_inventory / cache_sales_month / cache_sales_today)
+ * @param {object} payload 要儲存的資料物件（會與 updatedAt 一同包裝）
  */
 async function writeCacheToSheet(sheetName, payload) {
   const key = getCacheKey();
-  const url = CONFIG.GAS_URL;
+  const storageKey = `${key}_${sheetName}`;
+  const cacheData = {
+    updatedAt: new Date().toISOString(),
+    data: payload,
+  };
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "writeCache",
-        cacheKey: key,
-        sheetName,
-        updatedAt: new Date().toISOString(),
-        data: payload,
-      }),
-    });
-    const result = await res.json();
-    if (!result.success) console.warn(`[writeCache] ${sheetName} 寫入失敗:`, result.message);
-    else console.log(`✅ [writeCache] ${sheetName} 寫入成功`);
+    localStorage.setItem(storageKey, JSON.stringify(cacheData));
+    console.log(`✅ [writeCache] ${sheetName} 寫入 localStorage 成功`);
   } catch (e) {
-    // 寫入失敗不中斷主流程，僅 console 警告
-    console.warn(`[writeCache] ${sheetName} 連線失敗:`, e.message);
+    console.warn(`[writeCache] ${sheetName} 寫入失敗:`, e.message);
   }
 }
 
 /**
- * 從 Google Sheet 讀取快取（JSONP，避免 CORS）
- * sheetName: "cache_devices" | "cache_inventory" | "cache_sales_month" | "cache_sales_today"
- * returns: { data, updatedAt } 或 null（無資料時）
+ * 從 localStorage 讀取快取
+ * @param {string} sheetName 快取名稱
+ * @returns {Promise<{ data: object, updatedAt: string } | null>}
  */
-function readCacheFromSheet(sheetName) {
+async function readCacheFromSheet(sheetName) {
   const key = getCacheKey();
-  const cbName = "gascb_" + Date.now();
-  const gasUrl = `${CONFIG.GAS_URL}?action=readCache&cacheKey=${encodeURIComponent(key)}&sheetName=${encodeURIComponent(sheetName)}&callback=${cbName}`;
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      delete window[cbName];
-      document.getElementById("_gas_cache_script_")?.remove();
-      reject(new Error("快取讀取逾時"));
-    }, 15000);
-
-    window[cbName] = (result) => {
-      clearTimeout(timeout);
-      delete window[cbName];
-      document.getElementById("_gas_cache_script_")?.remove();
-      if (result && result.success) resolve(result);
-      else resolve(null); // 無資料視為 null，不 reject
-    };
-
-    const s = document.createElement("script");
-    s.id = "_gas_cache_script_";
-    s.src = gasUrl;
-    s.onerror = () => {
-      clearTimeout(timeout);
-      delete window[cbName];
-      reject(new Error("快取讀取連線失敗"));
-    };
-    document.body.appendChild(s);
-  });
+  const storageKey = `${key}_${sheetName}`;
+  const raw = localStorage.getItem(storageKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    // 回傳格式需與原本 GAS 回應一致：{ data, updatedAt }
+    return { data: parsed.data, updatedAt: parsed.updatedAt };
+  } catch (e) {
+    console.warn(`[readCache] 解析失敗: ${sheetName}`, e);
+    return null;
+  }
 }
-
 /**
  * 檢查快取是否在有效期內
  * updatedAt: ISO string
