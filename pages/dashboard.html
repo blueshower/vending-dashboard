@@ -1,463 +1,372 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard — 販賣機管理</title>
-  <link rel="stylesheet" href="../css/style.css" />
-  <style>
-    .chart-canvas-wrap {
-      position: relative;
-      height: 240px;
-      width: 100%;
-    }
-    .chart-canvas-wrap canvas {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100% !important;
-      height: 100% !important;
-    }
-    .chart-canvas-wrap.heatmap-wrap {
-      overflow-x: auto;
-      overflow-y: auto;
-    }
-    .heatmap-table {
-      border-collapse: collapse;
-      height: 100%;
-      table-layout: fixed;
-    }
-    .heatmap-table th,
-    .heatmap-table td {
-      min-width: 22px;
-      width: 22px;
-      height: 26px;
-      font-size: 10px;
-      text-align: center;
-      padding: 0;
-      white-space: nowrap;
-    }
-    .heatmap-table th {
-      font-weight: 600;
-      background: transparent;
-      color: inherit;
-      position: sticky;
-      left: 0;
-      z-index: 1;
-    }
-    .heatmap-table tr th:first-child {
-      min-width: 32px;
-      width: 32px;
-    }
+// ============================================================
+// config.js — 全域設定檔 (支援 CF/Vercel 雙代理與智慧分流)
+// v2: 新增大型資料分塊寫入/讀取，解決 localStorage 5MB 限制
+// ============================================================
 
-    /* ── 快取狀態列 ── */
-    .cache-bar {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 16px;
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      border-radius: 8px;
-      margin-bottom: 14px;
-      font-size: 12px;
-      color: #166534;
-      flex-wrap: wrap;
-    }
-    .cache-bar.stale {
-      background: #fefce8;
-      border-color: #fde68a;
-      color: #92400e;
-    }
-    .cache-bar .cache-time {
-      font-weight: 600;
-    }
-    .cache-bar .btn-refresh {
-      margin-left: auto;
-      background: #16a34a;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      padding: 5px 14px;
-      font-size: 12px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background .15s;
-    }
-    .cache-bar .btn-refresh:hover { background: #15803d; }
-    .cache-bar.stale .btn-refresh { background: #d97706; }
-    .cache-bar.stale .btn-refresh:hover { background: #b45309; }
+const CONFIG = {
+  // ★ Google Sheet ID
+  SHEET_ID: "1jjTEOLUiOWXRgO1ZTQNl7bKCh_0tDUAc3bMWia5RXEM",
 
-    /* 寫入進度提示 */
-    .sync-toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: #1e293b;
-      color: #fff;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-size: 13px;
-      z-index: 9999;
-      opacity: 0;
-      transform: translateY(8px);
-      transition: opacity .3s, transform .3s;
-      pointer-events: none;
-    }
-    .sync-toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-</head>
-<body>
-<script src="../js/config.js"></script>
-<script src="../js/sidebar.js"></script>
-<script>
-let G = { devices:[], stateMap:{}, inventoryMap:{}, orders:[], sales:[], updatedAt: null };
-let charts = {};
+  // ★ Google Apps Script 部署網址（登入 / 修改密碼 / 快取讀寫）
+  GAS_URL: "https://script.google.com/macros/s/AKfycbzV6b-_nutzNUdVV9bTt_UgA61KrGpPSFea6yFO2Zv3LfLwk44IIqyWkPCbqhAOLJHp/exec",
 
-window.addEventListener("DOMContentLoaded", async () => {
-  renderLayout("Dashboard", "dashboard");
-  document.getElementById("page-body").innerHTML = buildSkeleton();
-  await loadAll();
-});
+  // ★ 代理伺服器設定
+  PROXY_CF: "https://vending-proxy.blueshower-tw.workers.dev",
+  PROXY_VERCEL: "https://vending-dashboard-amber.vercel.app/api/proxy",
 
-function getAuthorizedDevices(allCodes) {
-  const allowed = getSession().devices;
-  if (!allowed || allowed.length === 0) return allCodes;
-  return allCodes.filter(c => allowed.includes(c));
+  // API Base 預設值
+  API_BASE: "https://api.tenlifeservice.com",
+
+  // 離線判斷：超過幾分鐘算離線
+  OFFLINE_MINUTES: 5,
+
+  // 快取過期時間（分鐘），超過此時間 dashboard 提示需重整
+  CACHE_TTL_MINUTES: 30,
+
+  // ★ 每塊最多幾筆（控制單一 localStorage key 大小）
+  // 3~4 萬筆 × 精簡後每筆約 200 bytes = ~8MB → 分成 80 塊每塊 500 筆，每塊 ~100KB
+  CHUNK_SIZE: 500,
+};
+
+// --- 工具函式 ---
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// ── 主要載入（呼叫 API，然後寫回 Sheet）──
-async function loadAll() {
-  showLoading(true);
-  showSyncToast("🔄 正在從 API 載入資料…");
+async function buildSign(params, token) {
+  const sorted = Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join("&");
+  return await sha256(sorted + token);
+}
+
+function getMonthStart() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
+}
+
+function getToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+// Session 管理
+function saveSession(data) { sessionStorage.setItem("session", JSON.stringify(data)); }
+function getSession() { const s=sessionStorage.getItem("session"); return s?JSON.parse(s):null; }
+function clearSession() { sessionStorage.removeItem("session"); }
+
+/**
+ * 權限檢查：確保使用者已登入
+ */
+function requireLogin() {
+  const s = getSession();
+  if (!s) window.location.href = "../index.html";
+  return s;
+}
+
+/**
+ * 核心 API 呼叫：具備自動分流與備援功能
+ */
+async function callAPI(endpoint, params) {
+  const session = getSession();
+  if (!session) throw new Error("未登入");
+
+  const apiBase = session.apiBase || CONFIG.API_BASE;
+  const sign = await buildSign(params, session.token);
+  const query = Object.keys(params).sort()
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
+
+  const targetUrl = `${apiBase}${endpoint}?${query}&sign=${sign}`;
+  const isHttps = targetUrl.startsWith("https://");
+
+  if (!isHttps) {
+    console.log("📡 [HTTP] 使用 Vercel Proxy...");
+    return await _doFetch(CONFIG.PROXY_VERCEL, targetUrl);
+  }
+
   try {
-    const { company } = getSession();
-    const begin = getMonthStart(), end = getToday();
+    console.log("⚡ [HTTPS] 嘗試 Cloudflare Proxy...");
+    return await _doFetch(CONFIG.PROXY_CF, targetUrl);
+  } catch (err) {
+    if (err.message.includes("limit") || err.message.includes("1010")) {
+      console.warn("⚠️ Cloudflare 額度達上限，切換至 Vercel...");
+    } else {
+      console.warn("⚠️ Cloudflare 失敗，改由 Vercel 處理...", err.message);
+    }
+    return await _doFetch(CONFIG.PROXY_VERCEL, targetUrl);
+  }
+}
 
-    const stateRes = await callAPI("/MachineState.aspx", { company });
-    const allCodes = stateRes.machine.map(m => m.code);
-    G.devices = getAuthorizedDevices(allCodes);
-    stateRes.machine.forEach(m => G.stateMap[m.code] = m);
+async function _doFetch(proxyUrl, target) {
+  const res = await fetch(`${proxyUrl}?url=${encodeURIComponent(target)}`);
+  if (res.status === 1010 || res.status === 429) throw new Error("Proxy limit reached");
+  if (!res.ok) throw new Error(`代理伺服器回報錯誤: ${res.status}`);
+  return await res.json();
+}
 
-    // 設備名稱
-    const nameRes = await callAPI("/Machine.aspx", { company });
-    const nameMap = {};
-    (nameRes.machine || []).forEach(m => { nameMap[m.code] = m.name; });
+// ============================================================
+// ★ localStorage 快取讀寫（支援大型資料自動分塊）
+// ============================================================
+//
+// 【設計說明】
+//   localStorage 單一 key 上限約 5MB（各瀏覽器略異）。
+//   3~4 萬筆交易序列化後可能達 15~50MB，直接寫入必然失敗。
+//
+//   解法：分塊儲存（Chunking）
+//   ┌─────────────────────────────────────────────────────┐
+//   │  {storageKey}_index   ← 記錄塊數、updatedAt、metadata │
+//   │  {storageKey}_chunk_0 ← 第 0~499 筆                 │
+//   │  {storageKey}_chunk_1 ← 第 500~999 筆               │
+//   │  ...                                                │
+//   └─────────────────────────────────────────────────────┘
+//   讀取時先查 index，再逐塊讀取重組成完整陣列。
+//
+//   另外：精簡欄位（_slimSales）可將每筆 ~1KB 壓縮至 ~200B，
+//   大幅降低所需塊數與寫入時間。
+// ============================================================
 
-    await Promise.all(G.devices.map(async code => {
+/**
+ * 取得快取索引鍵前綴：company_user
+ */
+function getCacheKey() {
+  const s = getSession();
+  return `${s.company}_${s.user}`;
+}
+
+/**
+ * 將陣列均分成多塊
+ */
+function _chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * 清除某個 storageKey 的所有舊分塊與 index
+ * 同時相容舊版單一 key 格式
+ */
+function _clearChunks(storageKey) {
+  try {
+    const idx = JSON.parse(localStorage.getItem(`${storageKey}_index`) || "null");
+    if (idx && idx.chunks) {
+      for (let i = 0; i < idx.chunks; i++) {
+        localStorage.removeItem(`${storageKey}_chunk_${i}`);
+      }
+    }
+  } catch(e) { /* ignore */ }
+  localStorage.removeItem(`${storageKey}_index`);
+  localStorage.removeItem(storageKey); // 清除舊版格式
+}
+
+/**
+ * 精簡 sales 陣列欄位，只保留頁面實際使用到的欄位
+ * 可將每筆資料從 ~1KB 壓縮至 ~150~250B（節省 70~85%）
+ */
+function _slimSales(sales) {
+  return sales.map(s => ({
+    time:          s.time,
+    code:          s.code,
+    name:          s.name,
+    commodityName: s.commodityName,
+    layer:         s.layer,
+    price:         s.price,
+    state:         s.state,
+    detail:        s.detail,
+  }));
+}
+
+/**
+ * 嘗試清除最舊的快取 key 以騰出空間（簡易 LRU）
+ */
+function _evictOldestCache() {
+  const indexKeys = Object.keys(localStorage).filter(k => k.endsWith("_index"));
+  if (indexKeys.length === 0) return;
+
+  let oldestKey = null, oldestTime = Infinity;
+  indexKeys.forEach(k => {
+    try {
+      const t = new Date(JSON.parse(localStorage.getItem(k))?.updatedAt || 0).getTime();
+      if (t < oldestTime) { oldestTime = t; oldestKey = k; }
+    } catch(e) { /* ignore */ }
+  });
+
+  if (oldestKey) {
+    const base = oldestKey.replace(/_index$/, "");
+    try {
+      const idx = JSON.parse(localStorage.getItem(oldestKey));
+      for (let i = 0; i < (idx?.chunks || 0); i++) {
+        localStorage.removeItem(`${base}_chunk_${i}`);
+      }
+    } catch(e) { /* ignore */ }
+    localStorage.removeItem(oldestKey);
+    console.log(`🗑️ [evict] 已清除最舊快取: ${oldestKey}`);
+  }
+}
+
+/**
+ * 寫入快取到 localStorage（自動分塊，支援大型資料）
+ *
+ * @param {string} sheetName  快取名稱，例如 "cache_sales_month"
+ * @param {object} payload    要儲存的資料物件
+ *
+ * 若 payload.sales 或 payload.inventory 是大陣列（> CHUNK_SIZE），
+ * 將自動啟用分塊模式；其餘小型資料仍走單一 key。
+ */
+async function writeCacheToSheet(sheetName, payload) {
+  const key = getCacheKey();
+  const storageKey = `${key}_${sheetName}`;
+
+  // 先清除舊資料，避免殘留舊分塊
+  _clearChunks(storageKey);
+
+  // 判斷是否有需要分塊的大陣列
+  const bigArrayKey = ["sales", "inventory"].find(
+    k => Array.isArray(payload[k]) && payload[k].length > CONFIG.CHUNK_SIZE
+  );
+
+  // ── 小型資料：單一 key 直接寫入 ──
+  if (!bigArrayKey) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        data: payload,
+      }));
+      console.log(`✅ [writeCache] ${sheetName} 寫入成功（單一 key）`);
+    } catch(e) {
+      console.warn(`[writeCache] ${sheetName} 寫入失敗:`, e.message);
+    }
+    return;
+  }
+
+  // ── 大型資料：精簡欄位 → 分塊寫入 ──
+  const bigArr = payload[bigArrayKey];
+  const slim   = (bigArrayKey === "sales") ? _slimSales(bigArr) : bigArr;
+  const chunks = _chunkArray(slim, CONFIG.CHUNK_SIZE);
+  const updatedAt = new Date().toISOString();
+
+  // 寫入 index（僅含 metadata，不含資料本體）
+  const indexPayload = {
+    updatedAt,
+    chunks: chunks.length,
+    total:  slim.length,
+    bigArrayKey,
+    // 其他非陣列欄位（company、updatedAt 等）一起存入 index
+    meta: Object.fromEntries(
+      Object.entries(payload).filter(([k]) => k !== bigArrayKey)
+    ),
+  };
+
+  try {
+    localStorage.setItem(`${storageKey}_index`, JSON.stringify(indexPayload));
+  } catch(e) {
+    console.warn(`[writeCache] ${sheetName} index 寫入失敗:`, e.message);
+    return;
+  }
+
+  // 逐塊寫入，失敗時嘗試清理後重試
+  let failedChunk = -1;
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      localStorage.setItem(`${storageKey}_chunk_${i}`, JSON.stringify(chunks[i]));
+    } catch(e) {
+      console.warn(`[writeCache] ${sheetName} chunk_${i} 空間不足，嘗試清理後重試…`);
+      _evictOldestCache();
       try {
-        const [rtRes, slRes] = await Promise.allSettled([
-          callAPI("/MachineCommodity.aspx", { code, company }),
-          callAPI("/OrderMachineCommodity.aspx", { code, company }),
-        ]);
-        G.inventoryMap[code] = {
-          name: nameMap[code] || code,
-          realtime: rtRes.status==="fulfilled" ? (rtRes.value.commodity||[]) : [],
-          sellable:  slRes.status==="fulfilled" ? (slRes.value.commodity||[]) : [],
-        };
-      } catch { G.inventoryMap[code] = { name: nameMap[code]||code, realtime:[], sellable:[] }; }
-    }));
+        localStorage.setItem(`${storageKey}_chunk_${i}`, JSON.stringify(chunks[i]));
+      } catch(e2) {
+        console.error(`[writeCache] ${sheetName} chunk_${i} 重試失敗，放棄。`);
+        failedChunk = i;
+        break;
+      }
+    }
+  }
 
-    const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future: 1 });
-    G.orders = orderRes.order || [];
-
-    const salesRes = await callAPI("/Sales.aspx", { begin, company, end });
-    const allSales = salesRes.sales || [];
-    const hasFilter = Array.isArray(G.devices) && G.devices.length > 0;
-    G.sales = hasFilter ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
-
-    G.updatedAt = new Date().toISOString();
-
-    // ── 渲染 Dashboard ──
-    renderDashboard();
-
-    // ── 非同步寫回 Google Sheet（不阻塞 UI）──
-    syncToSheet();
-
-  } catch(e) {
-    document.getElementById("page-body").innerHTML = `<p style="color:red;padding:24px;">資料載入失敗：${e.message}</p>`;
-  } finally { showLoading(false); }
+  if (failedChunk === -1) {
+    console.log(`✅ [writeCache] ${sheetName} 分塊完成（${chunks.length} 塊，${slim.length} 筆，已精簡欄位）`);
+  } else {
+    console.warn(`⚠️ [writeCache] ${sheetName} 在第 ${failedChunk} 塊中斷，快取不完整`);
+  }
 }
 
-// ── 將所有資料分批寫回 Google Sheet ──
-async function syncToSheet() {
-  showSyncToast("☁️ 正在同步資料到 Google Sheet…");
+/**
+ * 從 localStorage 讀取快取（自動重組分塊）
+ *
+ * @param {string} sheetName  快取名稱
+ * @returns {Promise<{ data: object, updatedAt: string } | null>}
+ */
+async function readCacheFromSheet(sheetName) {
+  const key = getCacheKey();
+  const storageKey = `${key}_${sheetName}`;
+
+  // ── 優先：分塊格式（v2）──
+  const rawIndex = localStorage.getItem(`${storageKey}_index`);
+  if (rawIndex) {
+    try {
+      const { updatedAt, chunks, bigArrayKey, meta } = JSON.parse(rawIndex);
+
+      const allItems = [];
+      for (let i = 0; i < chunks; i++) {
+        const raw = localStorage.getItem(`${storageKey}_chunk_${i}`);
+        if (!raw) {
+          console.warn(`[readCache] ${sheetName} chunk_${i} 遺失，快取視為無效`);
+          return null;
+        }
+        allItems.push(...JSON.parse(raw));
+      }
+
+      const data = { ...meta, [bigArrayKey]: allItems, updatedAt };
+      console.log(`📦 [readCache] ${sheetName} 分塊讀取（${chunks} 塊，${allItems.length} 筆）`);
+      return { data, updatedAt };
+
+    } catch(e) {
+      console.warn(`[readCache] ${sheetName} 分塊解析失敗:`, e);
+      return null;
+    }
+  }
+
+  // ── 備援：舊版單一 key 格式 ──
+  const raw = localStorage.getItem(storageKey);
+  if (!raw) return null;
   try {
-    const { company } = getSession();
-    const now = new Date();
-
-    // 1. 設備狀態快取
-    const devicesPayload = G.devices.map(code => {
-      const m = G.stateMap[code] || {};
-      const inv = G.inventoryMap[code] || {};
-      const diff = (now - new Date(m.uploadTime)) / 60000;
-      return {
-        code,
-        name: inv.name || "—",
-        online: diff <= 5,
-        uploadTime: m.uploadTime || "",
-        temperature1: m.temperature1 ?? "",
-      };
-    });
-    await writeCacheToSheet("cache_devices", {
-      company, updatedAt: G.updatedAt, devices: devicesPayload
-    });
-
-    // 2. 庫存快取
-    const inventoryPayload = [];
-    G.devices.forEach(code => {
-      const { name, realtime, sellable } = G.inventoryMap[code] || {};
-      const rtMap = {};
-      (realtime||[]).forEach(item => {
-        if (!rtMap[item.commodityCode]) rtMap[item.commodityCode] = { name: item.name, count: 0 };
-        rtMap[item.commodityCode].count++;
-      });
-      const slMap = {};
-      (sellable||[]).forEach(item => { slMap[item.commodityCode] = item.quantity; });
-      const allCodes = new Set([...Object.keys(rtMap), ...Object.keys(slMap)]);
-      allCodes.forEach(cc => {
-        inventoryPayload.push({
-          code,
-          devName: name || "—",
-          commodityCode: cc,
-          commodityName: rtMap[cc]?.name || (sellable||[]).find(s => s.commodityCode===cc)?.commodityName || cc,
-          realtime: rtMap[cc]?.count ?? "",
-          sellable: slMap[cc] ?? 0,
-        });
-      });
-    });
-    // 訂單快取（今日預訂）
-    await writeCacheToSheet("cache_inventory", {
-      company, updatedAt: G.updatedAt,
-      inventory: inventoryPayload,
-      orders: G.orders,
-    });
-
-    // 3. 本月銷售快取
-    await writeCacheToSheet("cache_sales_month", {
-      company, updatedAt: G.updatedAt, sales: G.sales
-    });
-
-    // 4. 今日銷售快取
-    const today = getToday();
-    const todaySales = G.sales.filter(s => s.time?.startsWith(today));
-    await writeCacheToSheet("cache_sales_today", {
-      company, updatedAt: G.updatedAt, sales: todaySales
-    });
-
-    showSyncToast("✅ 資料同步完成！其他頁面可直接讀取快取");
+    const parsed = JSON.parse(raw);
+    return { data: parsed.data, updatedAt: parsed.updatedAt };
   } catch(e) {
-    showSyncToast("⚠️ 部分資料同步失敗，請檢查 GAS 設定");
-    console.error("[syncToSheet]", e);
+    console.warn(`[readCache] 解析失敗: ${sheetName}`, e);
+    return null;
   }
 }
 
-// ── Toast 提示 ──
-let _toastTimer = null;
-function showSyncToast(msg, duration=3500) {
-  let toast = document.getElementById("sync-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "sync-toast";
-    toast.className = "sync-toast";
-    document.body.appendChild(toast);
-  }
-  toast.textContent = msg;
-  toast.classList.add("show");
-  if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => toast.classList.remove("show"), duration);
+/**
+ * 檢查快取是否在有效期內
+ */
+function isCacheValid(updatedAt) {
+  if (!updatedAt) return false;
+  const diff = (Date.now() - new Date(updatedAt).getTime()) / 60000;
+  return diff <= CONFIG.CACHE_TTL_MINUTES;
 }
 
-function buildSkeleton() {
-  return `<div class="stats-grid" id="stats-grid">${
-    ["設備狀態","庫存狀態","本月交易","今日交易"].map(l=>
-      `<div class="stat-card"><div class="label">${l}</div><div class="value">…</div></div>`
-    ).join("")
-  }</div><div class="charts-grid" id="charts-grid"></div>`;
+/**
+ * 快取使用量報告（開發除錯用）
+ * 在瀏覽器 console 呼叫 debugCacheUsage() 即可查看
+ */
+function debugCacheUsage() {
+  let total = 0;
+  const report = {};
+  Object.keys(localStorage).forEach(k => {
+    const size = (localStorage.getItem(k) || "").length * 2; // UTF-16 bytes
+    total += size;
+    const group = k.replace(/_chunk_\d+$/, "").replace(/_index$/, "");
+    report[group] = (report[group] || 0) + size;
+  });
+  console.table(
+    Object.entries(report)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => ({ key: k, "size (KB)": (v/1024).toFixed(1) }))
+  );
+  console.log(`📊 localStorage 總用量：${(total/1024/1024).toFixed(2)} MB`);
 }
-
-function renderDashboard() {
-  const now = new Date(), today = getToday();
-  let online=0, offline=0;
-  G.devices.forEach(code => {
-    const m = G.stateMap[code];
-    (!m || (now - new Date(m.uploadTime))/60000 > 5) ? offline++ : online++;
-  });
-
-  let invFull=0, invNormal=0, invLow=0, invShort=0;
-  G.devices.forEach(code => {
-    const inv = G.inventoryMap[code]?.sellable || [];
-    const total = inv.length;
-    if (!total) { invShort++; return; }
-    const pct = inv.filter(i => i.quantity >= 1).length / total;
-    if (pct >= 0.8) invFull++;
-    else if (pct >= 0.5) invNormal++;
-    else if (pct >= 0.25) invLow++;
-    else invShort++;
-  });
-
-  const monthSales = G.sales.filter(s => s.state === 1);
-  const monthAmt = monthSales.reduce((a,s) => a+(s.price||0), 0);
-  const todaySales = monthSales.filter(s => s.time?.startsWith(today));
-  const todayAmt = todaySales.reduce((a,s) => a+(s.price||0), 0);
-
-  const updatedLabel = G.updatedAt
-    ? new Date(G.updatedAt).toLocaleString("zh-TW", { hour12:false })
-    : "—";
-
-  document.getElementById("stats-grid").innerHTML = `
-    <div class="stat-card" onclick="location.href='device.html'">
-      <div class="icon">🖥️</div>
-      <div class="label">設備狀態</div>
-      <div class="value">${G.devices.length}</div>
-      <div class="sub-label">連線 ${online} ／ 離線 ${offline}</div>
-    </div>
-    <div class="stat-card" onclick="location.href='inventory.html'">
-      <div class="icon">📦</div>
-      <div class="label">庫存狀態</div>
-      <div class="value">${G.devices.length}</div>
-      <div class="sub-label">充足${invFull} 正常${invNormal} 稍低${invLow} 不足${invShort}</div>
-    </div>
-    <div class="stat-card" onclick="location.href='transaction_month.html'">
-      <div class="icon">💳</div>
-      <div class="label">本月交易</div>
-      <div class="value">${monthSales.length}</div>
-      <div class="sub-label">NT$ ${monthAmt.toLocaleString()}</div>
-    </div>
-    <div class="stat-card" onclick="location.href='transaction_today.html'">
-      <div class="icon">📅</div>
-      <div class="label">今日交易</div>
-      <div class="value">${todaySales.length}</div>
-      <div class="sub-label">NT$ ${todayAmt.toLocaleString()}</div>
-    </div>`;
-
-  document.getElementById("charts-grid").innerHTML = `
-    <!-- 快取狀態列 -->
-    <div class="cache-bar" id="cache-status-bar" style="grid-column:1/-1">
-      <span>📡 資料來源：即時 API</span>
-      <span class="cache-time">最後更新：${updatedLabel}</span>
-      <button class="btn-refresh" onclick="loadAll()">🔄 重新整理</button>
-    </div>
-
-    <div class="chart-col">
-      <div class="chart-card"><h3>連線狀態</h3><div class="chart-canvas-wrap"><canvas id="chart-conn"></canvas></div></div>
-      <div class="chart-card"><h3>庫存狀態</h3><div class="chart-canvas-wrap"><canvas id="chart-inv"></canvas></div></div>
-    </div>
-    <div class="chart-col">
-      <div class="chart-card"><h3>各設備商品販售統計</h3><div class="chart-canvas-wrap" style="overflow-x:auto"><canvas id="chart-device-sales"></canvas></div></div>
-      <div class="chart-card"><h3>商品銷售排名</h3><div class="chart-canvas-wrap"><canvas id="chart-rank"></canvas></div></div>
-    </div>
-    <div class="chart-col">
-      <div class="chart-card"><h3>每日交易趨勢</h3><div class="chart-canvas-wrap"><canvas id="chart-trend"></canvas></div></div>
-      <div class="chart-card"><h3>銷售熱力圖（週×時段）</h3><div class="chart-canvas-wrap heatmap-wrap" id="heatmap-wrap"></div></div>
-    </div>`;
-
-  drawConnectionPie(online, offline);
-  drawInventoryPie(invFull, invNormal, invLow, invShort);
-  drawDeviceSales(monthSales);
-  drawRankBar(monthSales);
-  drawTrend(monthSales);
-  drawHeatmap(monthSales);
-}
-
-function drawConnectionPie(on, off) {
-  charts.conn?.destroy();
-  charts.conn = new Chart(document.getElementById("chart-conn"), {
-    type:"doughnut",
-    data:{ labels:["連線","離線"], datasets:[{ data:[on,off], backgroundColor:["#16a34a","#dc2626"] }] },
-    options:{ maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
-  });
-}
-
-function drawInventoryPie(f,n,l,s) {
-  charts.inv?.destroy();
-  charts.inv = new Chart(document.getElementById("chart-inv"), {
-    type:"doughnut",
-    data:{ labels:["充足","正常","稍低","不足"], datasets:[{ data:[f,n,l,s], backgroundColor:["#16a34a","#2563eb","#d97706","#dc2626"] }] },
-    options:{ maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, cutout:"60%" }
-  });
-}
-
-function drawDeviceSales(sales) {
-  const map={}, productSet=new Set();
-  sales.forEach(s => {
-    const dev=s.name||s.code, prod=s.commodityName;
-    if(!map[dev]) map[dev]={};
-    map[dev][prod]=(map[dev][prod]||0)+1;
-    productSet.add(prod);
-  });
-  const devices=Object.keys(map), products=[...productSet];
-  const colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
-  charts.deviceSales?.destroy();
-  charts.deviceSales = new Chart(document.getElementById("chart-device-sales"), {
-    type:"bar",
-    data:{ labels:devices, datasets:products.map((p,i)=>({
-      label:p, data:devices.map(d=>map[d][p]||0), backgroundColor:colors[i%colors.length]
-    })) },
-    options:{ maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{stacked:true}, y:{stacked:true,beginAtZero:true} } }
-  });
-}
-
-function drawRankBar(sales) {
-  const map={};
-  sales.forEach(s=>{ map[s.commodityName]=(map[s.commodityName]||0)+1; });
-  const sorted=Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  charts.rank?.destroy();
-  charts.rank = new Chart(document.getElementById("chart-rank"), {
-    type:"bar",
-    data:{ labels:sorted.map(x=>x[0]), datasets:[{ label:"銷售數量", data:sorted.map(x=>x[1]), backgroundColor:"#2563eb" }] },
-    options:{ maintainAspectRatio:false, indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
-  });
-}
-
-function drawTrend(sales) {
-  const dayMap={}, amtMap={};
-  sales.forEach(s => {
-    const d=s.time?.slice(0,10); if(!d) return;
-    dayMap[d]=(dayMap[d]||0)+1;
-    amtMap[d]=(amtMap[d]||0)+(s.price||0);
-  });
-  const days=Object.keys(dayMap).sort();
-  charts.trend?.destroy();
-  charts.trend = new Chart(document.getElementById("chart-trend"), {
-    type:"line",
-    data:{ labels:days.map(d=>d.slice(5)), datasets:[
-      { label:"筆數", data:days.map(d=>dayMap[d]), borderColor:"#2563eb", tension:0.4, yAxisID:"y1" },
-      { label:"金額", data:days.map(d=>amtMap[d]), borderColor:"#16a34a", tension:0.4, yAxisID:"y2" }
-    ] },
-    options:{ maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, scales:{
-      y1:{ position:"left", beginAtZero:true },
-      y2:{ position:"right", beginAtZero:true, grid:{ drawOnChartArea:false } }
-    } }
-  });
-}
-
-function drawHeatmap(sales) {
-  const days=["一","二","三","四","五","六","日"], hours=Array.from({length:24},(_,i)=>i);
-  const grid=Array.from({length:7},()=>Array(24).fill(0));
-  sales.forEach(s => {
-    if(!s.time) return;
-    const d=new Date(s.time.replace(" ","T"));
-    grid[(d.getDay()+6)%7][d.getHours()]++;
-  });
-  const max=Math.max(...grid.flat(),1);
-  const getColor=v=>`rgba(37,99,235,${(v/max*0.85+0.05).toFixed(2)})`;
-
-  let html=`<table class="heatmap-table" style="width:max-content;height:100%"><tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
-  days.forEach((day,di) => {
-    html+=`<tr><th>週${day}</th>`;
-    hours.forEach(h => {
-      const v=grid[di][h];
-      html+=`<td style="background:${getColor(v)};color:${v>max*0.5?"#fff":"transparent"}" title="週${day} ${h}時：${v}筆">${v||""}</td>`;
-    });
-    html+="</tr>";
-  });
-  html+="</table>";
-  document.getElementById("heatmap-wrap").innerHTML=html;
-}
-</script>
-</body>
-</html>
