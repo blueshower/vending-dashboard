@@ -129,6 +129,27 @@ function getAuthorizedDevices(allCodes) {
   return allCodes.filter(c => allowed.includes(c));
 }
 
+// 將日期區間拆分成以 maxDays 為一段的區間陣列 (不重疊)
+function splitDateRange(startStr, endStr, maxDays = 6) {
+  const ranges = [];
+  let currentStart = new Date(startStr + "T00:00:00");
+  const endDate = new Date(endStr + "T00:00:00");
+
+  while (currentStart <= endDate) {
+    let currentEnd = new Date(currentStart);
+    currentEnd.setDate(currentEnd.getDate() + maxDays - 1);
+    if (currentEnd > endDate) currentEnd = new Date(endDate);
+
+    const begin = currentStart.toISOString().slice(0, 10);
+    const end = currentEnd.toISOString().slice(0, 10);
+    ranges.push({ begin, end });
+
+    // 下一段從 currentEnd 的隔天開始
+    currentStart.setDate(currentEnd.getDate() + 1);
+  }
+  return ranges;
+}
+
 // ── 主要載入（呼叫 API，然後寫回 Sheet）──
 async function loadAll() {
   showLoading(true);
@@ -164,10 +185,31 @@ async function loadAll() {
     const orderRes = await callAPI("/OrderList.aspx", { begin, company, end, future: 1 });
     G.orders = orderRes.order || [];
 
-    const salesRes = await callAPI("/Sales.aspx", { begin, company, end });
-    const allSales = salesRes.sales || [];
+    // ----- 銷售資料：分段平行呼叫 (每段最多 6 天) -----
+    const salesChunks = splitDateRange(begin, end, 6);
+    const chunkPromises = salesChunks.map(chunk =>
+      callAPI("/Sales.aspx", { begin: chunk.begin, end: chunk.end, company })
+    );
+    const chunkResults = await Promise.allSettled(chunkPromises);
+    const allSalesRaw = [];
+    let anyFailed = false;
+    for (const result of chunkResults) {
+      if (result.status === 'fulfilled' && result.value && Array.isArray(result.value.sales)) {
+        allSalesRaw.push(...result.value.sales);
+      } else {
+        anyFailed = true;
+        console.warn('分段銷售數據請求失敗:', result.reason);
+      }
+    }
+    if (allSalesRaw.length === 0 && anyFailed) {
+      throw new Error('無法取得銷售數據，所有分段請求皆失敗');
+    }
+    if (anyFailed) {
+      showSyncToast('⚠️ 部分銷售資料取得失敗，圖表可能不完整');
+    }
     const hasFilter = Array.isArray(G.devices) && G.devices.length > 0;
-    G.sales = hasFilter ? allSales.filter(s => G.devices.includes(s.code)) : allSales;
+    G.sales = hasFilter ? allSalesRaw.filter(s => G.devices.includes(s.code)) : allSalesRaw;
+    // ------------------------------------------------
 
     G.updatedAt = new Date().toISOString();
 
@@ -446,7 +488,8 @@ function drawHeatmap(sales) {
   const max=Math.max(...grid.flat(),1);
   const getColor=v=>`rgba(37,99,235,${(v/max*0.85+0.05).toFixed(2)})`;
 
-  let html=`<table class="heatmap-table" style="width:max-content;height:100%"><tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
+  let html=`<table class="heatmap-table" style="width:max-content;height:100%">`;
+  html+=`<tr><th></th>${hours.map(h=>`<th>${h}</th>`).join("")}</tr>`;
   days.forEach((day,di) => {
     html+=`<tr><th>週${day}</th>`;
     hours.forEach(h => {
