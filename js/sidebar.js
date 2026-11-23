@@ -157,6 +157,7 @@ async function submitChangePass() {
     btn.textContent = "確認修改";
   }
 }
+
 // ── 設備快選篩選（庫存 / 本月交易 / 今日交易共用）──
 function buildDeviceOptions(list, codeKey, nameKey) {
   const map = new Map();
