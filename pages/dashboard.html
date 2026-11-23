@@ -217,6 +217,15 @@ async function syncToSheet() {
       });
       const slMap = {};
       (sellable||[]).forEach(item => { slMap[item.commodityCode] = item.quantity; });
+      // 各貨道庫存：依貨道位置（A1 / AA1…）統計每個商品的數量
+      const slotMap = {};
+      (realtime||[]).forEach(item => {
+        const ly = item.layer ?? item.slot ?? item.position ?? item.channel ?? item.track ?? "";
+        if (!ly) return;
+        const cc = item.commodityCode;
+        if (!slotMap[cc]) slotMap[cc] = {};
+        slotMap[cc][ly] = (slotMap[cc][ly] || 0) + 1;
+      });
       const allCodes = new Set([...Object.keys(rtMap), ...Object.keys(slMap)]);
       allCodes.forEach(cc => {
         inventoryPayload.push({
@@ -226,6 +235,7 @@ async function syncToSheet() {
           commodityName: rtMap[cc]?.name || (sellable||[]).find(s => s.commodityCode===cc)?.commodityName || cc,
           realtime: rtMap[cc]?.count ?? "",
           sellable: slMap[cc] ?? 0,
+          slots: slotMap[cc] || {},
         });
       });
     });
