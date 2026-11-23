@@ -41,6 +41,8 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+let _inv = [], _ord = [], _meta = {}, _dev = "";
+
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("庫存預訂資訊", "inventory");
   document.getElementById("page-body").innerHTML = `<p style="padding:16px;color:#64748b">讀取快取中…</p>`;
@@ -58,8 +60,10 @@ async function loadFromCache() {
     }
 
     const { inventory, orders, updatedAt } = cached.data;
-    const isValid = isCacheValid(updatedAt);
-    renderInventory(inventory || [], orders || [], updatedAt, isValid);
+    _inv = inventory || [];
+    _ord = orders || [];
+    _meta = { updatedAt, isValid: isCacheValid(updatedAt) };
+    renderInventory();
 
   } catch(e) {
     document.getElementById("page-body").innerHTML = `
@@ -84,7 +88,18 @@ function showNoCacheMessage() {
     </div>`;
 }
 
-function renderInventory(inventory, orders, updatedAt, isValid) {
+// 設備快選切換
+function onDeviceChange(v) {
+  _dev = v;
+  renderInventory();
+}
+
+function renderInventory() {
+  const { updatedAt, isValid } = _meta;
+  const inventory = _dev ? _inv.filter(i => i.code === _dev) : _inv;
+  const orders = _ord;
+  const deviceOpts = buildDeviceOptions(_inv, "code", "devName");
+
   const updatedLabel = updatedAt
     ? new Date(updatedAt).toLocaleString("zh-TW", { hour12:false })
     : "—";
@@ -121,11 +136,15 @@ function renderInventory(inventory, orders, updatedAt, isValid) {
 
   document.getElementById("page-body").innerHTML = `
     <div class="${isValid ? "cache-notice" : "cache-notice stale"}">
-      <span>${isValid ? "✅ 快取有效" : "⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘"}</span>
+      <span>${isValid ? "✅ 快取有效" : `⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘`}</span>
       <span style="font-weight:600">最後更新：${updatedLabel}</span>
       <button class="go-dash" onclick="location.href='dashboard.html'">
         🔄 前往 Dashboard 重新整理
       </button>
+    </div>
+    <div style="margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      ${deviceFilterHTML(deviceOpts, _dev, "onDeviceChange")}
+      <span style="color:#64748b;font-size:13px">共 ${inventory.length} 筆商品</span>
     </div>
     <div class="table-wrap">
       <div class="table-header">
