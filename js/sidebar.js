@@ -157,3 +157,28 @@ async function submitChangePass() {
     btn.textContent = "確認修改";
   }
 }
+// ── 設備快選篩選（庫存 / 本月交易 / 今日交易共用）──
+function buildDeviceOptions(list, codeKey, nameKey) {
+  const map = new Map();
+  list.forEach(x => {
+    if (x[codeKey] && !map.has(x[codeKey])) map.set(x[codeKey], x[nameKey] || "");
+  });
+  return [...map]
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
+}
+
+function deviceFilterHTML(options, selected, handlerName) {
+  const opts = options.map(o =>
+    `<option value="${o.code}" ${o.code === selected ? "selected" : ""}>${o.name} ${o.code}</option>`
+  ).join("");
+  return `
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#334155">
+      🖥️ 設備
+      <select onchange="${handlerName}(this.value)"
+        style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;min-width:200px;background:#fff;cursor:pointer">
+        <option value="">全部設備</option>
+        ${opts}
+      </select>
+    </label>`;
+}
