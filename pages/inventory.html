@@ -41,7 +41,7 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
-let _inv = [], _ord = [], _meta = {}, _dev = "";
+let _inv = [], _ord = [], _meta = {}, _dev = "", _detail = false;
 
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("庫存預訂資訊", "inventory");
@@ -94,6 +94,24 @@ function onDeviceChange(v) {
   renderInventory();
 }
 
+// 貨道細項勾選切換
+function onDetailChange(checked) {
+  _detail = checked;
+  renderInventory();
+}
+
+// 貨道排序：A1 < A2 < … < Z1 < AA1 < AB1
+function _slotKey(s) {
+  const m = /^([A-Za-z]+)(\d+)$/.exec(s);
+  return m ? [m[1].length, m[1].toUpperCase(), parseInt(m[2], 10)] : [99, String(s), 0];
+}
+function _cmpSlot(a, b) {
+  const x = _slotKey(a), y = _slotKey(b);
+  if (x[0] !== y[0]) return x[0] - y[0];
+  if (x[1] !== y[1]) return x[1] < y[1] ? -1 : 1;
+  return x[2] - y[2];
+}
+
 function renderInventory() {
   const { updatedAt, isValid } = _meta;
   const inventory = _dev ? _inv.filter(i => i.code === _dev) : _inv;
@@ -104,35 +122,83 @@ function renderInventory() {
     ? new Date(updatedAt).toLocaleString("zh-TW", { hour12:false })
     : "—";
 
-  // 將訂單資料 map 到設備名稱+商品編號
-  const ordMap = {};
-  orders.forEach(o => {
-    if (o.finish === "False") {
-      const key = `${o.name}__${o.commodityCode}`;
-      ordMap[key] = (ordMap[key] || 0) + 1;
-    }
-  });
+  let theadHTML, rows, count, colspan, noSlotNotice = "";
 
-  const rows = inventory.map((item, idx) => {
-    const ordKey = `${item.devName}__${item.commodityCode}`;
-    const ord = ordMap[ordKey] || 0;
-    const sl = item.sellable ?? 0;
-    const badge = sl >= 1
-      ? `<span class="badge badge-green">有貨</span>`
-      : `<span class="badge badge-red">缺貨</span>`;
+  if (!_detail) {
+    // ── 一般模式：依商品加總（原本的顯示）──
+    const ordMap = {};
+    orders.forEach(o => {
+      if (o.finish === "False") {
+        const key = `${o.name}__${o.commodityCode}`;
+        ordMap[key] = (ordMap[key] || 0) + 1;
+      }
+    });
 
-    return `<tr>
-      <td>${idx + 1}</td>
-      <td><code style="font-size:11px">${item.code}</code></td>
-      <td><strong>${item.devName}</strong></td>
-      <td>${item.commodityCode}</td>
-      <td>${item.commodityName}</td>
-      <td>${item.realtime !== "" ? item.realtime : "—"}</td>
-      <td>${sl}</td>
-      <td>${ord}</td>
-      <td>${badge}</td>
+    theadHTML = `<tr>
+      <th>#</th><th>設備編號</th><th>設備名稱</th><th>商品編號</th>
+      <th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th>
     </tr>`;
-  }).join("");
+    colspan = 9;
+    count = inventory.length;
+
+    rows = inventory.map((item, idx) => {
+      const ord = ordMap[`${item.devName}__${item.commodityCode}`] || 0;
+      const sl = item.sellable ?? 0;
+      const badge = sl >= 1
+        ? `<span class="badge badge-green">有貨</span>`
+        : `<span class="badge badge-red">缺貨</span>`;
+      return `<tr>
+        <td>${idx + 1}</td>
+        <td><code style="font-size:11px">${item.code}</code></td>
+        <td><strong>${item.devName}</strong></td>
+        <td>${item.commodityCode}</td>
+        <td>${item.commodityName}</td>
+        <td>${item.realtime !== "" ? item.realtime : "—"}</td>
+        <td>${sl}</td>
+        <td>${ord}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join("");
+
+  } else {
+    // ── 貨道細項模式：每個貨道一列 ──
+    const hasSlotData = _inv.some(i => i.slots && Object.keys(i.slots).length);
+    if (!hasSlotData) {
+      noSlotNotice = `<div class="cache-notice stale">⚠️ 目前快取沒有貨道資料，請先到 Dashboard 按「重新整理」更新一次。</div>`;
+    }
+
+    const flat = [];
+    inventory.forEach(item => {
+      const entries = Object.entries(item.slots || {});
+      if (entries.length === 0) {
+        flat.push({ item, slot: "—", qty: item.realtime !== "" ? item.realtime : "—" });
+      } else {
+        entries.forEach(([slot, qty]) => flat.push({ item, slot, qty }));
+      }
+    });
+    flat.sort((a, b) =>
+      (a.item.devName || "").localeCompare(b.item.devName || "", "zh-TW") ||
+      (a.item.code || "").localeCompare(b.item.code || "") ||
+      _cmpSlot(a.slot, b.slot)
+    );
+
+    theadHTML = `<tr>
+      <th>#</th><th>設備編號</th><th>設備名稱</th><th>貨道位置</th>
+      <th>商品編號</th><th>商品名稱</th><th>即時庫存</th>
+    </tr>`;
+    colspan = 7;
+    count = flat.length;
+
+    rows = flat.map((r, idx) => `<tr>
+      <td>${idx + 1}</td>
+      <td><code style="font-size:11px">${r.item.code}</code></td>
+      <td><strong>${r.item.devName}</strong></td>
+      <td><strong>${r.slot}</strong></td>
+      <td>${r.item.commodityCode}</td>
+      <td>${r.item.commodityName}</td>
+      <td>${r.qty}</td>
+    </tr>`).join("");
+  }
 
   document.getElementById("page-body").innerHTML = `
     <div class="${isValid ? "cache-notice" : "cache-notice stale"}">
@@ -142,22 +208,22 @@ function renderInventory() {
         🔄 前往 Dashboard 重新整理
       </button>
     </div>
-    <div style="margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    ${noSlotNotice}
+    <div style="margin-bottom:14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
       ${deviceFilterHTML(deviceOpts, _dev, "onDeviceChange")}
-      <span style="color:#64748b;font-size:13px">共 ${inventory.length} 筆商品</span>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer">
+        <input type="checkbox" ${_detail ? "checked" : ""} onchange="onDetailChange(this.checked)" />
+        貨道細項
+      </label>
+      <span style="color:#64748b;font-size:13px">共 ${count} 筆${_detail ? "貨道" : "商品"}</span>
     </div>
     <div class="table-wrap">
       <div class="table-header">
-        <h2>庫存預訂列表（${inventory.length} 筆商品）</h2>
+        <h2>${_detail ? "貨道庫存列表" : "庫存預訂列表"}（${count} 筆${_detail ? "貨道" : "商品"}）</h2>
       </div>
       <table>
-        <thead>
-          <tr>
-            <th>#</th><th>設備編號</th><th>設備名稱</th><th>商品編號</th>
-            <th>商品名稱</th><th>即時庫存</th><th>可售庫存</th><th>預訂數量</th><th>狀態</th>
-          </tr>
-        </thead>
-        <tbody>${rows || "<tr><td colspan='9' style='text-align:center;color:#64748b'>無資料</td></tr>"}</tbody>
+        <thead>${theadHTML}</thead>
+        <tbody>${rows || `<tr><td colspan='${colspan}' style='text-align:center;color:#64748b'>無資料</td></tr>`}</tbody>
       </table>
     </div>`;
 }
