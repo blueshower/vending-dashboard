@@ -43,6 +43,7 @@
 <script src="../js/sidebar.js"></script>
 <script>
 let charts = {};
+let _all = [], _meta = {}, _dev = "";
 
 window.addEventListener("DOMContentLoaded", async () => {
   renderLayout("本月交易明細", "transaction");
@@ -61,10 +62,10 @@ async function loadFromCache() {
     }
 
     const { sales, updatedAt } = cached.data;
-    const isValid = isCacheValid(updatedAt);
     // 只保留成功交易
-    const successSales = (sales || []).filter(s => s.state === 1);
-    renderTransaction(successSales, updatedAt, isValid);
+    _all = (sales || []).filter(s => s.state === 1);
+    _meta = { updatedAt, isValid: isCacheValid(updatedAt) };
+    renderTransaction();
 
   } catch(e) {
     document.getElementById("page-body").innerHTML = `
@@ -89,7 +90,17 @@ function showNoCacheMessage() {
     </div>`;
 }
 
-function renderTransaction(sales, updatedAt, isValid) {
+// 設備快選切換
+function onDeviceChange(v) {
+  _dev = v;
+  renderTransaction();
+}
+
+function renderTransaction() {
+  const { updatedAt, isValid } = _meta;
+  const sales = _dev ? _all.filter(s => s.code === _dev) : _all;
+  const deviceOpts = buildDeviceOptions(_all, "code", "name");
+
   const updatedLabel = updatedAt
     ? new Date(updatedAt).toLocaleString("zh-TW", { hour12:false })
     : "—";
@@ -109,7 +120,7 @@ function renderTransaction(sales, updatedAt, isValid) {
 
   document.getElementById("page-body").innerHTML = `
     <div class="${isValid ? "cache-notice" : "cache-notice stale"}">
-      <span>${isValid ? "✅ 快取有效" : "⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘"}</span>
+      <span>${isValid ? "✅ 快取有效" : `⚠️ 快取已超過 ${CONFIG.CACHE_TTL_MINUTES} 分鐘`}</span>
       <span style="font-weight:600">最後更新：${updatedLabel}</span>
       <button class="go-dash" onclick="location.href='dashboard.html'">
         🔄 前往 Dashboard 重新整理
@@ -118,6 +129,7 @@ function renderTransaction(sales, updatedAt, isValid) {
     <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <span style="background:#dbeafe;color:#1e40af;padding:4px 14px;border-radius:99px;font-size:12px;font-weight:700">📅 本月</span>
       <button class="btn-icon" onclick="location.href='transaction_today.html'">📌 切換今日</button>
+      ${deviceFilterHTML(deviceOpts, _dev, "onDeviceChange")}
       <span style="color:#64748b;font-size:13px">共 ${sales.length} 筆 ／ 合計 NT$ ${totalAmt.toLocaleString()}</span>
     </div>
     <div class="detail-layout">
